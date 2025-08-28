@@ -1,4 +1,5 @@
 :- use_module(library(readutil)).
+:- use_module(library(pcre)).   % re_replace/5
 
 %% load_metta_file(+Path)
 load_metta_file(Path) :-
@@ -7,17 +8,21 @@ load_metta_file(Path) :-
 
 %% load_metta_string(+String)
 load_metta_string(S) :-
-    string_codes(S, Cs),
-    metta_split_top(Cs, Forms),              % Forms = [ "(= ...)", "(= ...)", ... ]
+    % Rewrite lines like:    !(fib 10)
+    % into balanced form:    (= (run) (fib 10))
+    % Note: anchors per line (?m), capture inner "(...)" as group 1, put it back with \\1
+    re_replace("(?m)^\\s*!\\s*\\((.*)\\)\\s*$", "(= (run) (\\1))", S, S1, [global]),
+    string_codes(S1, Cs),
+    metta_split_top(Cs, Forms),              % unchanged
     maplist(metta_assert_eq_if_any, Forms).
 
 %% --- process one top-level form string (correct order!) ---
 metta_assert_eq_if_any(FormStr) :-
-    sread(FormStr, Term),                        % parse S-expression
+    sread(FormStr, Term),
     ( Term = [=, HeadExpr, _BodyExpr] ->
-        head_name_from_expr(HeadExpr, F),       % e.g. (fib $N) -> fib
-        register_fun(F),                        % <-- register BEFORE flattening
-        flatten_clause(FormStr, Clause),        % now recursive calls compile as goals
+        head_name_from_expr(HeadExpr, F),    % (fib $N) -> fib   |  (run) -> run
+        register_fun(F),                     % register BEFORE flattening
+        flatten_clause(FormStr, Clause),
         assertz(Clause)
     ; true ).
 
@@ -26,12 +31,11 @@ head_name_from_expr(Head, _) :-
     format(user_error, 'Unsupported head form: ~q~n', [Head]),
     fail.
 
-%% --- balanced top-level splitter over codes (no char_type/2 anywhere) ---
+%% --- balanced top-level splitter over codes (unchanged) ---
 metta_split_top(Cs, Forms) :-
     char_code('(', O), char_code(')', C),
     metta_collect(Cs, 0, [], [], O, C, R), reverse(R, Forms).
 
-% metta_collect(Input,Depth,BufRev,AccRev,Open,Close,OutRev)
 metta_collect([], 0, [], Acc, _, _, Acc) :- !.
 metta_collect([], _, BufR, Acc, _, _, [Form|Acc]) :-
     reverse(BufR, Buf), string_codes(Form, Buf).

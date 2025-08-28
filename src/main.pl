@@ -29,10 +29,8 @@ fib_demo :-
 
 
 demo_file :- load_metta_file('./examples/fib.metta'),
-   %run_goals_from_file('./examples/fib.metta').
-   listing(fib/2),
-   fib(30, R),
-   format("fib(30) = ~w~n", [R]).
+   run(R),
+   format("~w~n", [[R]]).
 
 
 main :-
