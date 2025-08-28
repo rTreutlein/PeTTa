@@ -42,7 +42,7 @@ list_to_conj([G|Gs], (G,Rest)) :-
 % base case
 flatten_(X, [], X) :- (var(X); atomic(X)), !.
 
-% ---- IF short-circuit (must be before the [H|T] clause) ----
+% ---- IF short-circuit (build conjunctions, no sequence_/1) ----
 flatten_([if, C, T, E], Goals, Out) :- !,
     flatten_(C, Gc, Cv),
     flatten_(T, Gt, Tv),
@@ -85,10 +85,6 @@ flatten_(Term, Goals, Out) :-
     \+ is_list(Term),
     Term =.. [F|Args],
     flatten_([F|Args], Goals, Out).
-
-% run a list of goals sequentially
-sequence_([]).
-sequence_([G|Gs]) :- G, sequence_(Gs).
 
 flatten_list_([], [], []).
 flatten_list_([X|Xs], Goals, [V|Vs]) :-
@@ -148,7 +144,7 @@ ws        --> [].
 sp(0' ). sp(0'\t). sp(0'\n). sp(0'\r).
 
 %% --------- Sample semantics ---------
-lt(A,B,R)    :- (A<B -> R=true ; R=false).   % boolean for if/4
+lt(A,B,R)    :- (A<B -> R=true ; R=false).
 mul(A,B,R)   :- R is A*B.
 div(A,B,R)   :- R is A/B.
 minus(A,B,R) :- R is A-B.
@@ -159,20 +155,20 @@ if(Cond,Then,Else,Out) :- ( call(Cond) -> Out = Then ; Out = Else ).
 %% superpose/2: pick one element of a list on backtracking
 superpose(List, X) :- member(X, List).
 
-%% --------- Demo ---------
-
-test1 :-
+%% ---------------- Demo / Setup ----------------
+setup_core :-
     register_fun(let),
     register_fun(plus),
-    register_fun(if),
     register_fun(superpose),
+    register_fun(minus),
+    register_fun(lt).
 
-    %flatten_clause("(= (prog $Y) (let $X $Y
-    %                     (collapse (superpose (12 (plus $X 4))))))", Clause),
-    
-    flatten_clause("(= (prog $Y) (superpose (let $L (1 2 3)
-                         (collapse (superpose $L)))))", Clause),
-    
+test1 :-
+    setup_core,
+    flatten_clause("(= (prog $Y) (let $X $Y
+                         (collapse (superpose (12 (plus $X 4))))))", Clause),
+    %flatten_clause("(= (prog $Y) (superpose (let $L (1 2 3)
+    %                     (collapse (superpose $L)))))", Clause),
     assertz(Clause),
     portray_clause(Clause),
 
@@ -180,29 +176,24 @@ test1 :-
     format("prog(10, Results) -> Results = ~w~n", [Results]).
 
 
-setup_core :-
-    register_fun(let),
-    register_fun(plus),
-    register_fun(superpose).
 
-setup_fib :-
+
+fib_demo :-
     setup_core,
     register_fun(fib),
     register_fun(minus),
     register_fun(lt),
-
-    %flatten_clause("(= (fib 0) 0)", C1), assertz(C1),
-    %flatten_clause("(= (fib 1) 1)", C2), assertz(C2),
     flatten_clause(
       "(= (fib $N)
           (if (lt $N 2)
               $N
               (plus (fib (minus $N 1))
                     (fib (minus $N 2)))))", C3),
-    portray_clause(C3),
-    assertz(C3).
-
-main :-
-    setup_fib,
+    assertz(C3),
     fib(30, R),
     format("fib(30) = ~w~n", [R]).
+
+main :-
+    fib_demo.
+
+
