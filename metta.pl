@@ -48,10 +48,12 @@ flatten_([if, C, T, E], Goals, Out) :- !,
     flatten_(T, Gt, Tv),
     flatten_(E, Ge, Ev),
     list_to_conj(Gc, ConC),
+    list_to_conj(Gt, ConT),
+    list_to_conj(Ge, ConE),
     Goals = [ ( ConC,
                ( Cv == true
-               -> (sequence_(Gt), Out = Tv)
-               ;  (sequence_(Ge), Out = Ev)
+               -> (ConT, Out = Tv)
+               ;  (ConE, Out = Ev)
                )
              ) ].
 
@@ -197,6 +199,7 @@ setup_fib :-
               $N
               (plus (fib (minus $N 1))
                     (fib (minus $N 2)))))", C3),
+    portray_clause(C3),
     assertz(C3).
 
 main :-
