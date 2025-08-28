@@ -1,4 +1,4 @@
-%:- use_module(library(clpfd)).
+% :- use_module(library(clpfd)).
 :- dynamic fun/1.
 
 register_fun(Name)   :- must_be(atom, Name), (fun(Name)->true;asserta(fun(Name))).
@@ -21,11 +21,11 @@ flatten_clause(Input, Clause) :-
 flatten_eq([=, HeadExpr, BodyExpr], Clause) :- !,
     flatten_head(HeadExpr, Head0),             % e.g. (prog Y) -> prog(Y)
     Head0 =.. [F|Args],
-    append(Args, [Out], HeadArgs),            % add extra Out arg
-    Head =.. [F|HeadArgs],                    % build prog(Y,Out)
-    flatten_(BodyExpr, GoalsB, OutBody),      % flatten body, OutBody is last value
+    append(Args, [Out], HeadArgs),             % add extra Out arg
+    Head =.. [F|HeadArgs],                     % build prog(Y,Out)
+    flatten_(BodyExpr, GoalsB, OutBody),       % flatten body, OutBody is last value
     list_to_conj(GoalsB, Body0),
-    Body = (Body0, Out = OutBody),            % unify Out with body result
+    Body = (Body0, Out = OutBody),             % unify Out with body result
     Clause = (Head :- Body).
 
 flatten_head([F|Args], Head) :- Head =.. [F|Args].
@@ -37,10 +37,23 @@ list_to_conj([G|Gs], (G,Rest)) :-
     nonvar(Gs),
     list_to_conj(Gs, Rest).
 
-%% ---------------- Core ----------------
+%% ---------------- Core: ALL flatten_/3 clauses together ----------------
 
 % base case
 flatten_(X, [], X) :- (var(X); atomic(X)), !.
+
+% ---- IF short-circuit (must be before the [H|T] clause) ----
+flatten_([if, C, T, E], Goals, Out) :- !,
+    flatten_(C, Gc, Cv),
+    flatten_(T, Gt, Tv),
+    flatten_(E, Ge, Ev),
+    list_to_conj(Gc, ConC),
+    Goals = [ ( ConC,
+               ( Cv == true
+               -> (sequence_(Gt), Out = Tv)
+               ;  (sequence_(Ge), Out = Ev)
+               )
+             ) ].
 
 % (collapse E): collect all nondet results of E into a list
 flatten_([collapse, E], Goals, Out) :- !,
@@ -53,13 +66,12 @@ flatten_([H|T], Goals, Out) :- !,
     flatten_(H, GsH, HV),
     flatten_list_(T, GsT, AVs),
     append(GsH, GsT, Inner),
-    ( atom(HV), fun(HV) ->
+    ( atom(HV), fun(HV), HV \== if ->
         Out = V,
         append(AVs, [V], ArgsV),
         Goal =.. [HV|ArgsV],
-        ( HV == let ->
-            Goals = [Goal|Inner]            % let before its body
-        ;   append(Inner, [Goal], Goals)    % default: after subgoals
+        ( HV == let -> Goals = [Goal|Inner]          % let before its body
+        ;             append(Inner, [Goal], Goals)   % default: after subgoals
         )
     ;   Out = [HV|AVs],
         Goals = Inner
@@ -71,6 +83,10 @@ flatten_(Term, Goals, Out) :-
     \+ is_list(Term),
     Term =.. [F|Args],
     flatten_([F|Args], Goals, Out).
+
+% run a list of goals sequentially
+sequence_([]).
+sequence_([G|Gs]) :- G, sequence_(Gs).
 
 flatten_list_([], [], []).
 flatten_list_([X|Xs], Goals, [V|Vs]) :-
@@ -130,17 +146,20 @@ ws        --> [].
 sp(0' ). sp(0'\t). sp(0'\n). sp(0'\r).
 
 %% --------- Sample semantics ---------
-plus(A,B,R) :- R is A+B.     % or: R #= A + B
+lt(A,B,R)    :- (A<B -> R=true ; R=false).   % boolean for if/4
+mul(A,B,R)   :- R is A*B.
+div(A,B,R)   :- R is A/B.
+minus(A,B,R) :- R is A-B.
+plus(A,B,R)  :- R is A+B.
 let(Var,Val,In,Out) :- Var = Val, Out = In.
 if(Cond,Then,Else,Out) :- ( call(Cond) -> Out = Then ; Out = Else ).
 
 %% superpose/2: pick one element of a list on backtracking
-superpose(List, X) :-
-    %must_be(list, List),
-    member(X, List).
+superpose(List, X) :- member(X, List).
 
 %% --------- Demo ---------
-main :-
+
+test1 :-
     register_fun(let),
     register_fun(plus),
     register_fun(if),
@@ -157,3 +176,30 @@ main :-
 
     findall(Result, prog(10, Result), Results),
     format("prog(10, Results) -> Results = ~w~n", [Results]).
+
+
+setup_core :-
+    register_fun(let),
+    register_fun(plus),
+    register_fun(superpose).
+
+setup_fib :-
+    setup_core,
+    register_fun(fib),
+    register_fun(minus),
+    register_fun(lt),
+
+    %flatten_clause("(= (fib 0) 0)", C1), assertz(C1),
+    %flatten_clause("(= (fib 1) 1)", C2), assertz(C2),
+    flatten_clause(
+      "(= (fib $N)
+          (if (lt $N 2)
+              $N
+              (plus (fib (minus $N 1))
+                    (fib (minus $N 2)))))", C3),
+    assertz(C3).
+
+main :-
+    setup_fib,
+    fib(30, R),
+    format("fib(30) = ~w~n", [R]).
