@@ -88,13 +88,14 @@ digits([D|Ds]) --> [D], { code_type(D, digit) }, digits_rest(Ds).
 digits_rest([D|Ds]) --> [D], { code_type(D, digit) }, digits_rest(Ds).
 digits_rest([])     --> [].
 
-% variables: reuse existing, else create fresh
+% MeTTa variables: reuse existing, else create fresh
 var_symbol(V,E0,E) -->
-    [C], { code_type(C, upper) }, sym_tail(Cs),
-    { atom_codes(Name,[C|Cs]),
+    "$", sym_tail(Cs), !,
+    { atom_codes(Name, [0'$|Cs]),
       ( memberchk(Name-V0,E0) -> V = V0, E = E0
       ; V = _, E = [Name-V|E0]
       ) }.
+
 
 % atoms: lowercase or symbol-starting
 atom_symbol(A) -->
@@ -118,15 +119,24 @@ plus(A,B,R) :- R is A+B.       % or: R #= A + B
 let(Var,Val,In,Out) :- Var = Val, Out = In.
 if(Cond,Then,Else,Out) :- ( call(Cond) -> Out = Then ; Out = Else ).
 
+%% superpose/2: pick one element of a list on backtracking
+superpose(List, X) :-
+    must_be(list, List),
+    member(X, List).
+
 %% --------- Demo ---------
 main :-
     register_fun(let),
     register_fun(plus),
     register_fun(if),
+    register_fun(superpose),
 
-    flatten_clause("(= (prog Y) (let X Y (if false 42 (plus X 4))))", Clause),
+    flatten_clause("(= (prog $Y) (let $X $Y 
+                                     (if false 42 (superpose (12 
+                                                              (plus $X 4))))))", Clause),
     assertz(Clause),
     portray_clause(Clause),
 
-    prog(10, Result),
-    format("prog(10, Result) -> Result = ~w~n", [Result]).
+    findall(Result, prog(10, Result), Results),
+    format("prog(10, Results) -> Results = ~w~n", [Results]).
+    
