@@ -1,5 +1,5 @@
-:- ensure_loaded(sreader).
-:- ensure_loaded(flattener).
+:- ensure_loaded(parser).
+:- ensure_loaded(translator).
 :- ensure_loaded(filereader).
 
 %% --------- Sample semantics ---------

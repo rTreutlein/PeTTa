@@ -1,4 +1,3 @@
-
 :- ensure_loaded(metta).
 
 prologfunc(X,Y) :- Y is X+1.
