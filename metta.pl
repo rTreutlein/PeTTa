@@ -30,8 +30,25 @@ flatten_eq([=, HeadExpr, BodyExpr], Clause) :- !,
 
 flatten_head([F|Args], Head) :- Head =.. [F|Args].
 
+%% ---------- Safe conjunction builder ----------
+list_to_conj([], true) :- !.
+list_to_conj([G], G) :- !.
+list_to_conj([G|Gs], (G,Rest)) :-
+    nonvar(Gs),
+    list_to_conj(Gs, Rest).
+
 %% ---------------- Core ----------------
+
+% base case
 flatten_(X, [], X) :- (var(X); atomic(X)), !.
+
+% (collapse E): collect all nondet results of E into a list
+flatten_([collapse, E], Goals, Out) :- !,
+    flatten_(E, GsE, EV),
+    list_to_conj(GsE, Conj),
+    Goals = [findall(EV, Conj, Out)].
+
+% list (S-expr) case
 flatten_([H|T], Goals, Out) :- !,
     flatten_(H, GsH, HV),
     flatten_list_(T, GsT, AVs),
@@ -47,8 +64,11 @@ flatten_([H|T], Goals, Out) :- !,
     ;   Out = [HV|AVs],
         Goals = Inner
     ).
+
+% treat non-list compounds as S-expr [F|Args]
 flatten_(Term, Goals, Out) :-
     compound(Term),
+    \+ is_list(Term),
     Term =.. [F|Args],
     flatten_([F|Args], Goals, Out).
 
@@ -96,7 +116,6 @@ var_symbol(V,E0,E) -->
       ; V = _, E = [Name-V|E0]
       ) }.
 
-
 % atoms: lowercase or symbol-starting
 atom_symbol(A) -->
     [C], { \+ sp(C), C \= 0'(, C \= 0'), \+ code_type(C, upper) },
@@ -110,18 +129,14 @@ ws        --> [C], { sp(C) }, !, ws.
 ws        --> [].
 sp(0' ). sp(0'\t). sp(0'\n). sp(0'\r).
 
-%% --------- Conjunction builder ---------
-list_to_conj([G], G).
-list_to_conj([G|Gs], (G,Rest)) :- list_to_conj(Gs, Rest).
-
 %% --------- Sample semantics ---------
-plus(A,B,R) :- R is A+B.       % or: R #= A + B
+plus(A,B,R) :- R is A+B.     % or: R #= A + B
 let(Var,Val,In,Out) :- Var = Val, Out = In.
 if(Cond,Then,Else,Out) :- ( call(Cond) -> Out = Then ; Out = Else ).
 
 %% superpose/2: pick one element of a list on backtracking
 superpose(List, X) :-
-    must_be(list, List),
+    %must_be(list, List),
     member(X, List).
 
 %% --------- Demo ---------
@@ -131,12 +146,14 @@ main :-
     register_fun(if),
     register_fun(superpose),
 
-    flatten_clause("(= (prog $Y) (let $X $Y 
-                                     (if false 42 (superpose (12 
-                                                              (plus $X 4))))))", Clause),
+    %flatten_clause("(= (prog $Y) (let $X $Y
+    %                     (collapse (superpose (12 (plus $X 4))))))", Clause),
+    
+    flatten_clause("(= (prog $Y) (superpose (let $L (1 2 3)
+                         (collapse (superpose $L)))))", Clause),
+    
     assertz(Clause),
     portray_clause(Clause),
 
     findall(Result, prog(10, Result), Results),
     format("prog(10, Results) -> Results = ~w~n", [Results]).
-    
