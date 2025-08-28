@@ -3,6 +3,7 @@
 :- ensure_loaded(filereader).
 
 %% --------- Sample semantics ---------
+eq(A,B,R)    :- (A==B -> R=true ; R=false).
 lt(A,B,R)    :- (A<B -> R=true ; R=false).
 mul(A,B,R)   :- R is A*B.
 div(A,B,R)   :- R is A/B.
@@ -23,7 +24,8 @@ unregister_fun(Name) :- retractall(fun(Name)).
    register_fun(plus),
    register_fun(superpose),
    register_fun(minus),
-   register_fun(lt).
+   register_fun(lt),
+   register_fun(eq).
 
 
 
