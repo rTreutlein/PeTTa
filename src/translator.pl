@@ -37,6 +37,22 @@ list_to_conj([G|Gs], (G,Rest)) :-
 
 %% ---------------- Core: ALL flatten_/3 clauses together ----------------
 
+% START Detect assoc: list of [Var,_] pairs
+is_assoc_pair([K,_]) :- var(K).
+is_assoc_list(L) :- L \= [], is_list(L), maplist(is_assoc_pair, L).
+
+flatten_assoc_list_dl([], Gs, Gs, Out, Out).
+flatten_assoc_list_dl([[K,Vx]|Rs], Gs0, Gs, [[K,V]|Out0], Out) :-
+    flatten_(Vx, GV, V),
+    % append difference list GV to Gs0
+    append(GV, Gs1, Gs0),
+    flatten_assoc_list_dl(Rs, Gs1, Gs, Out0, Out).
+
+flatten_(AL, Goals, Out) :-
+    is_assoc_list(AL), !,
+    flatten_assoc_list_dl(AL, Goals, [], Out, []).
+% END
+
 % base case
 flatten_(X, [], X) :- (var(X); atomic(X)), !.
 
@@ -70,7 +86,7 @@ flatten_([H|T], Goals, Out) :- !,
         Out = V,
         append(AVs, [V], ArgsV),
         Goal =.. [HV|ArgsV],
-        ( HV == let -> Goals = [Goal|Inner]          % let before its body
+        ( (HV == let ; HV == 'let*') -> Goals = [Goal|Inner]          % let before its body
         ;             append(Inner, [Goal], Goals)   % default: after subgoals
         )
     ;   Out = [HV|AVs],

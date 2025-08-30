@@ -3,13 +3,19 @@
 :- ensure_loaded(filereader).
 
 %% --------- Sample semantics ---------
-eq(A,B,R)    :- (A==B -> R=true ; R=false).
-lt(A,B,R)    :- (A<B -> R=true ; R=false).
-mul(A,B,R)   :- R is A*B.
-div(A,B,R)   :- R is A/B.
-minus(A,B,R) :- R is A-B.
-plus(A,B,R)  :- R is A+B.
+'=='(A,B,R)    :- (A==B -> R=true ; R=false).
+'<'(A,B,R)    :- (A<B -> R=true ; R=false).
+'*'(A,B,R)   :- R is A*B.
+'/'(A,B,R)   :- R is A/B.
+'-'(A,B,R) :- R is A-B.
+'+'(A,B,R)  :- R is A+B.
+
+%let/let*:
 let(Var,Val,In,Out) :- Var = Val, Out = In.
+'let*'([], Body, Body).
+'let*'([[Var,Val]|Rest], Body, Out) :-
+    Var = Val,
+    'let*'(Rest, Body, Out).
 if(Cond,Then,Else,Out) :- ( call(Cond) -> Out = Then ; Out = Else ).
 
 %% superpose/2: pick one element of a list on backtracking
@@ -20,13 +26,12 @@ superpose(List, X) :- member(X, List).
 :- dynamic fun/1.
 register_fun(Name)   :- must_be(atom, Name), (fun(Name)->true; asserta(fun(Name))).
 unregister_fun(Name) :- retractall(fun(Name)).
-:- register_fun(let),
-   register_fun(plus),
-   register_fun(superpose),
-   register_fun(minus),
-   register_fun(lt),
-   register_fun(eq).
-
-
+:- register_fun(superpose),
+   register_fun(let),
+   register_fun('let*'),
+   register_fun('+'),
+   register_fun('-'),
+   register_fun('<'),
+   register_fun('==').
 
 
