@@ -17,6 +17,6 @@ main :-
     ->  prolog_interop_example
     ;   Args = [File|_],                  % at least one argument
         load_metta_file(File),
-        run(R),
-        format("~w~n", [[R]])
+        findall(R, run(R), Results),
+        format("~w~n", [Results])
     ).

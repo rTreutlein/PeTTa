@@ -1,3 +1,5 @@
+:- use_module(library(dcg/basics)).
+
 %/* ---------- Tiny S-expression reader (with vars shared) ---------- */
 sread(S, Term) :-
     ( string(S) -> atom_string(A,S) ; A = S ),
@@ -12,10 +14,7 @@ sexpr(A,E,E)  --> ws, atom_symbol(A), ws.
 seq([X|Xs],E0,E2) --> sexpr(X,E0,E1), ws, seq(Xs,E1,E2).
 seq([],E,E)       --> [].
 
-number_(N)     --> digits(Ds), { number_codes(N, Ds) }.
-digits([D|Ds]) --> [D], { code_type(D, digit) }, digits_rest(Ds).
-digits_rest([D|Ds]) --> [D], { code_type(D, digit) }, digits_rest(Ds).
-digits_rest([])     --> [].
+number_(N)     --> number(N).
 
 % MeTTa variables: reuse existing, else create fresh
 var_symbol(V,E0,E) -->
@@ -25,11 +24,12 @@ var_symbol(V,E0,E) -->
       ; V = _, E = [Name-V|E0]
       ) }.
 
-% atoms: lowercase or symbol-starting
 atom_symbol(A) -->
-    [C], { \+ sp(C), C \= 0'(, C \= 0'), \+ code_type(C, upper) },
+    [C], { \+ sp(C), C \= 0'(, C \= 0') },   % allow uppercase too
     sym_tail(Cs),
-    { atom_codes(A, [C|Cs]) }.
+    { atom_codes(A0, [C|Cs]),
+      downcase_atom(A0, A)                    % now "True" -> true, "Foo" -> foo
+    }.
 
 sym_tail([C|Cs]) --> [C], { \+ sp(C), C \= 0'(, C \= 0') }, !, sym_tail(Cs).
 sym_tail([])     --> [].
