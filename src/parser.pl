@@ -1,39 +1,23 @@
 :- use_module(library(dcg/basics)).
 
-%/* ---------- Tiny S-expression reader (with vars shared) ---------- */
-sread(S, Term) :-
-    ( string(S) -> atom_string(A,S) ; A = S ),
-    atom_codes(A, Cs),
-    phrase(sexpr(Term, [], _Env), Cs).
+%Read S string or atom, extract codes, and apply DCG:
+sread(S,T) :- ( string(S)->atom_string(A,S) ; A=S ), atom_codes(A,Cs), phrase(sexpr(T,[],_), Cs).
 
-sexpr(T,E0,E) --> ws, "(", ws, seq(T,E0,E), ws, ")", ws, !.
-sexpr(N,E,E)  --> ws, number_(N), ws, !.
-sexpr(V,E0,E) --> ws, var_symbol(V,E0,E), ws, !.
-sexpr(A,E,E)  --> ws, atom_symbol(A), ws.
+%An S-Expression is a parentheses-nesting of S-Expressions that are either numbers, variables, or atoms:
+sexpr(T,E0,E) --> blanks, "(", blanks, seq(T,E0,E), blanks, ")", blanks, !.
+sexpr(N,E,E)  --> blanks, number(N), blanks, !.
+sexpr(V,E0,E) --> blanks, var_symbol(V,E0,E), blanks, !.
+sexpr(A,E,E)  --> blanks, atom_symbol(A), blanks.
 
-seq([X|Xs],E0,E2) --> sexpr(X,E0,E1), ws, seq(Xs,E1,E2).
+%Recursive processing of S-Expressions within S-Expressions:
+seq([X|Xs],E0,E2) --> sexpr(X,E0,E1), blanks, seq(Xs,E1,E2).
 seq([],E,E)       --> [].
 
-number_(N)     --> number(N).
+%Variables start with $, and keep track of them: re-using exising Prolog variables for variables of same name:
+var_symbol(V,E0,E) --> "$", token(Cs), { atom_chars(N, Cs), ( memberchk(N-V0, E0) -> V=V0, E=E0 ; V=_, E=[N-V|E0] ) }.
 
-% MeTTa variables: reuse existing, else create fresh
-var_symbol(V,E0,E) -->
-    "$", sym_tail(Cs), !,
-    { atom_codes(Name, [0'$|Cs]),
-      ( memberchk(Name-V0,E0) -> V = V0, E = E0
-      ; V = _, E = [Name-V|E0]
-      ) }.
+%Atoms are just tokens:
+atom_symbol(A) --> token(Cs), { atom_codes(A0,Cs), downcase_atom(A0,A) }.
 
-atom_symbol(A) -->
-    [C], { \+ sp(C), C \= 0'(, C \= 0') },   % allow uppercase too
-    sym_tail(Cs),
-    { atom_codes(A0, [C|Cs]),
-      downcase_atom(A0, A)                    % now "True" -> true, "Foo" -> foo
-    }.
-
-sym_tail([C|Cs]) --> [C], { \+ sp(C), C \= 0'(, C \= 0') }, !, sym_tail(Cs).
-sym_tail([])     --> [].
-
-ws        --> [C], { sp(C) }, !, ws.
-ws        --> [].
-sp(0' ). sp(0'\t). sp(0'\n). sp(0'\r).
+%A token is a non-empty string without whitespace:
+token(Cs) --> string_without(" \t\r\n()", Cs), { Cs \= [] }.
