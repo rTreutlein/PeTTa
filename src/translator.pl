@@ -1,50 +1,45 @@
-%% --------- Input normalizer (dedupe string/atom → term) ---------
-to_term(Input, T) :- ( (string(Input); atom(Input)) -> sread(Input, T0) ; T0 = Input ), T = T0.
+%Flatten (= Head Body) MeTTa function into Prolog Clause:
+translate_clause(Input, (Head :- (BodyConj, Out=OutBody))) :- sread(Input, Term),
+                                                              Term = [=, [F|Args0], BodyExpr],
+                                                              append(Args0, [Out], Args),
+                                                              compound_name_arguments(Head, F, Args),
+                                                              translate_expr(BodyExpr, GoalsB, OutBody),
+                                                              goals_list_to_conj(GoalsB, BodyConj).
 
-%% --------- Flatten (= Head Body) into Clause ---------
-flatten_clause(Input, (Head :- (BodyConj, Out=OutBody))) :- to_term(Input, [=, [F|Args0], BodyExpr]), 
-                                                            append(Args0, [Out], Args),
-                                                            compound_name_arguments(Head, F, Args),
-                                                            flatten_(BodyExpr, GoalsB, OutBody),
-                                                            list_to_conj(GoalsB, BodyConj).
+%Conjunction builder, turning goals list to a flat conjunction
+goals_list_to_conj([], true)      :- !.
+goals_list_to_conj([G], G)        :- !.
+goals_list_to_conj([G|Gs], (G,R)) :- goals_list_to_conj(Gs, R).
 
-%% --------- Conjunction builder ---------
-list_to_conj([], true)   :- !.
-list_to_conj([G], G)     :- !.
-list_to_conj([G|Gs], (G,R)) :- list_to_conj(Gs, R).
+%Turn MeTTa code S-expression into goals list
+translate_expr(X, [], X)          :- (var(X); atomic(X)), !.
+translate_expr([H|T], Goals, Out) :- !, translate_expr(H, GsH, HV),
+        ( HV == collapse, T = [E] -> translate_expr(E, GsE, EV),
+                                      goals_list_to_conj(GsE, Conj),
+                                      append(GsH, [findall(EV, Conj, Out)], Goals)
+        ; HV == if, T = [C,T1,E1] -> translate_expr(C, Gc, Cv), goals_list_to_conj(Gc, ConC),
+                                     translate_expr(T1, Gt, Tv), goals_list_to_conj(Gt, ConT),
+                                     translate_expr(E1, Ge, Ev), goals_list_to_conj(Ge, ConE),
+                                     append(GsH, [(ConC, (Cv == true -> (ConT, Out = Tv)
+                                                                     ;  (ConE, Out = Ev)))], Goals)
+        ; HV == let, T = [Pat, Val, In] -> translate_expr(Pat, Gp, P),
+                                           translate_expr(Val, Gv, V),
+                                           translate_expr(In,  Gi, I),
+                                           Out = R, Goal = let(P, V, I, R),
+                                           append(GsH, Gp, A), append(A, Gv, B), append(B, Gi, Inner),
+                                           Goals = [Goal | Inner]
+        ; HV == 'let*', T = [Binds, Body] -> translate_expr(Binds, Gb, Bs),
+                                             translate_expr(Body,  Gd, B),
+                                             Out = R, Goal = 'let*'(Bs, B, R),
+                                             append(GsH, Gb, A), append(A, Gd, Inner),
+                                             Goals = [Goal | Inner]
+        ; translate_args(T, GsT, AVs), append(GsH, GsT, Inner),
+          ( atom(HV), fun(HV) -> Out = V, append(AVs, [V], ArgsV),
+                                 Goal =.. [HV|ArgsV],
+                                 append(Inner, [Goal], Goals)
+                              ;  Out = [HV | AVs],
+                                 Goals = Inner ) ).
 
-%% ---------------- flatten_/3 ----------------
-flatten_(X, [], X) :- (var(X); atomic(X)), !.
-
-% (optional) short-circuit if/collapse; keep or drop per your stdlib plans
-flatten_([if, C, T, E], Goals, Out) :- !,
-    flatten_(C, Gc, Cv), list_to_conj(Gc, ConC),
-    flatten_(T, Gt, Tv), list_to_conj(Gt, ConT),
-    flatten_(E, Ge, Ev), list_to_conj(Ge, ConE),
-    Goals = [(ConC, (Cv == true -> (ConT, Out = Tv) ; (ConE, Out = Ev)))].
-
-% (collapse E): collect all nondet results of E into a list
-flatten_([collapse, E], Goals, Out) :- !, flatten_(E, GsE, EV), list_to_conj(GsE, Conj),
-                                       Goals = [findall(EV, Conj, Out)].
-
-% general S-expr
-flatten_([H|T], Goals, Out) :- !,
-    flatten_(H, GsH, HV),
-    flatten_list_(T, GsT, AVs),
-    append(GsH, GsT, Inner),
-    ( atom(HV), fun(HV), HV \== if ->
-        Out = V,
-        append(AVs, [V], ArgsV),
-        Goal =.. [HV|ArgsV],
-        ( memberchk(HV, [let,'let*']) -> Goals = [Goal|Inner]
-                                      ;  append(Inner, [Goal], Goals) )
-    ;   Out = [HV|AVs],
-        Goals = Inner
-    ).
-
-flatten_list_([], [], []).
-flatten_list_([X|Xs], Goals, [V|Vs]) :-
-    flatten_(X, G1, V),
-    flatten_list_(Xs, G2, Vs),
-    append(G1, G2, Goals).
-
+%Translate arguments recursively
+translate_args([], [], []).
+translate_args([X|Xs], Goals, [V|Vs]) :- translate_expr(X, G1, V), translate_args(Xs, G2, Vs), append(G1, G2, Goals).

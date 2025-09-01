@@ -10,7 +10,7 @@ process_metta_string(S) :- re_replace("(?m)^\\s*!\\s*\\((.*)\\)\\s*$", "(= (run)
 
 %From a function string: parse, extract first atom as name, register, transform to relation, assert.
 assert_function(FormStr) :- sread(FormStr, Term), ( Term = [=, [FAtom|_], _BodyExpr], atom(FAtom) ->
-                                                    register_fun(FAtom), flatten_clause(FormStr, Clause), 
+                                                    register_fun(FAtom), translate_clause(FormStr, Clause),
                                                     assertz(Clause) ; true ).
 
 % Collect characters until all parentheses are balanced (depth 0), accumulating codes
