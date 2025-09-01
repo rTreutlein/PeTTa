@@ -17,7 +17,7 @@ assert_function(FormStr) :- sread(FormStr, Term), ( Term = [=, [FAtom|_], _BodyE
 grab_until_balanced(D,Acc,Cs) --> [C], { ( C=0'( -> D1 is D+1; C=0') -> D1 is D-1; D1=D ), Acc1=[C|Acc] },
                                          ( { D1=:=0 } -> { reverse(Acc1,Cs) } ; grab_until_balanced(D1,Acc1,Cs) ).
 
-%Read a balanced (...) block if available, turn into string, then continue with rest
+%Read a balanced (...) block if available, turn into string, then continue with rest, ignoring comment lines
 top_forms([])     --> blanks, eos.
 top_forms(Fs) --> blanks, ";", string_without("\n", _), (eol ; eos), !, top_forms(Fs).
 top_forms([F|Fs]) --> blanks, "(", grab_until_balanced(1, [0'(], Cs), { string_codes(F, Cs) }, top_forms(Fs).
