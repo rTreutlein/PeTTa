@@ -25,6 +25,7 @@ empty(_) :- fail.
 let(Var,Val,In,Out) :- Var = Val, Out = In.
 'let*'([], Body, Body).
 'let*'([[Var,Val]|Rest], Body, Out) :- Var = Val, 'let*'(Rest, Body, Out).
+%if(Cond,Then,Else,Out) :- ( call(Cond) -> Out = Then ; Out = Else ).
 
 %% superpose/2: pick one element of a list on backtracking
 superpose(List, X) :- member(X, List).
