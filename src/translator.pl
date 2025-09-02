@@ -19,10 +19,10 @@ arg_to_list(A, [A]).
 translate_expr(X, [], X)          :- (var(X) ; atomic(X)), !.
 translate_expr([H|T], Goals, Out) :-
         !, translate_expr(H, GsH, HV),
-        (  HV == superpose, T = [Args], is_list(Args), Args = [F1|Rest], F1 = [superpose|Tail1]
-           -> maplist(arg_to_list, Rest, RestLists),
-              append([Tail1|RestLists], Union),
-              append(GsH, [( member(Sub, Union), ( is_list(Sub) -> member(Out, Sub) ; Out = Sub ))], Goals)
+        ( HV == superpose, T = [Args], is_list(Args), Args = [F1|Rest], F1 = [superpose|Tail1]
+          -> maplist(arg_to_list, Rest, RestLists),
+             append([Tail1|RestLists], Union),
+             append(GsH, [( member(Sub, Union), ( is_list(Sub) -> member(Out, Sub) ; Out = Sub ))], Goals)
         ; HV == collapse, T = [E] -> translate_expr(E, GsE, EV),
                                      goals_list_to_conj(GsE, Conj),
                                      append(GsH, [findall(EV, Conj, Out)], Goals)
