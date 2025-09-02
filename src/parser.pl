@@ -1,7 +1,9 @@
 :- use_module(library(dcg/basics)). %blanks/0, number/1, string_without/2
 
 %Read S string or atom, extract codes, and apply DCG:
-sread(S,T) :- ( string(S)->atom_string(A,S) ; A=S ), atom_codes(A,Cs), phrase(sexpr(T,[],_), Cs).
+sread(S,T) :- ( string(S) -> atom_string(A,S) ; A=S ),
+              atom_codes(A,Cs),
+              phrase(sexpr(T,[],_), Cs).
 
 %An S-Expression is a parentheses-nesting of S-Expressions that are either numbers, variables, or atoms:
 sexpr(T,E0,E) --> blanks, "(", blanks, seq(T,E0,E), blanks, ")", blanks, !.

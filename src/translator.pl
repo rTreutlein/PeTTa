@@ -11,12 +11,21 @@ goals_list_to_conj([], true)      :- !.
 goals_list_to_conj([G], G)        :- !.
 goals_list_to_conj([G|Gs], (G,R)) :- goals_list_to_conj(Gs, R).
 
+%Extract arguments or superpose arguments as list
+arg_to_list([superpose|T], T) :- !.
+arg_to_list(A, [A]).
+
 %Turn MeTTa code S-expression into goals list
-translate_expr(X, [], X)          :- (var(X); atomic(X)), !.
-translate_expr([H|T], Goals, Out) :- !, translate_expr(H, GsH, HV),
-        ( HV == collapse, T = [E] -> translate_expr(E, GsE, EV),
-                                      goals_list_to_conj(GsE, Conj),
-                                      append(GsH, [findall(EV, Conj, Out)], Goals)
+translate_expr(X, [], X)          :- (var(X) ; atomic(X)), !.
+translate_expr([H|T], Goals, Out) :-
+        !, translate_expr(H, GsH, HV),
+        (  HV == superpose, T = [Args], is_list(Args), Args = [F1|Rest], F1 = [superpose|Tail1]
+           -> maplist(arg_to_list, Rest, RestLists),
+              append([Tail1|RestLists], Union),
+              append(GsH, [( member(Sub, Union), ( is_list(Sub) -> member(Out, Sub) ; Out = Sub ))], Goals)
+        ; HV == collapse, T = [E] -> translate_expr(E, GsE, EV),
+                                     goals_list_to_conj(GsE, Conj),
+                                     append(GsH, [findall(EV, Conj, Out)], Goals)
         ; HV == if, T = [C,T1,E1] -> translate_expr(C, Gc, Cv), goals_list_to_conj(Gc, ConC),
                                      translate_expr(T1, Gt, Tv), goals_list_to_conj(Gt, ConT),
                                      translate_expr(E1, Ge, Ev), goals_list_to_conj(Ge, ConE),
@@ -37,9 +46,11 @@ translate_expr([H|T], Goals, Out) :- !, translate_expr(H, GsH, HV),
           ( atom(HV), fun(HV) -> Out = V, append(AVs, [V], ArgsV),
                                  Goal =.. [HV|ArgsV],
                                  append(Inner, [Goal], Goals)
-                              ;  Out = [HV | AVs],
+                               ; Out = [HV | AVs],
                                  Goals = Inner ) ).
 
 %Translate arguments recursively
 translate_args([], [], []).
-translate_args([X|Xs], Goals, [V|Vs]) :- translate_expr(X, G1, V), translate_args(Xs, G2, Vs), append(G1, G2, Goals).
+translate_args([X|Xs], Goals, [V|Vs]) :- translate_expr(X, G1, V),
+                                         translate_args(Xs, G2, Vs),
+                                         append(G1, G2, Goals).

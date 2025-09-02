@@ -29,7 +29,8 @@ superpose(L,X) :- member(X,L).
 empty(_) :- fail.
 
 %Diagnostics / Testing:
-test(A,B,R) :- (A==B -> E='✅' ; E='❌'), format(string(R), "is ~w, should ~w. ~w", [A,B,E]).
+test(A,B,R) :- (A==B -> E='✅' ; E='❌'),
+               format(string(R), "is ~w, should ~w. ~w", [A,B,E]).
 
 %Registration:
 :- dynamic fun/1.
