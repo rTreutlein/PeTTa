@@ -34,15 +34,19 @@ translate_expr([H|T], Goals, Out) :-
                                      ( ConE == true -> BE = (Out = Ev) ; BE = (ConE, Out = Ev) ),
                                      ( ConC == true -> append(GsH, [ (Cv == true -> BT ; BE) ], Goals)
                                                      ; append(GsH, [ (ConC, (Cv == true -> BT ; BE)) ], Goals))
+        ;  HV == case, T = [KeyExpr, PairsExpr] -> translate_expr(KeyExpr, Gk, Kv),
+                                                   translate_case(PairsExpr, Kv, Out, IfGoal),
+                                                   append(GsH, Gk, G0),
+                                                   append(G0, [IfGoal], Goals)
         ; HV == let, T = [Pat, Val, In] -> translate_expr(Pat, Gp, P),
                                            translate_expr(Val, Gv, V),
                                            translate_expr(In,  Gi, I),
-                                           Out = R, Goal = let(P, V, I, R),
+                                           Goal = let(P, V, I, Out),
                                            append(GsH, Gp, A), append(A, Gv, B), append(B, Gi, Inner),
                                            Goals = [Goal | Inner]
         ; HV == 'let*', T = [Binds, Body] -> translate_expr(Binds, Gb, Bs),
                                              translate_expr(Body,  Gd, B),
-                                             Out = R, Goal = 'let*'(Bs, B, R),
+                                             Goal = 'let*'(Bs, B, Out),
                                              append(GsH, Gb, A), append(A, Gd, Inner),
                                              Goals = [Goal | Inner]
         ; translate_args(T, GsT, AVs), append(GsH, GsT, Inner),
@@ -51,6 +55,14 @@ translate_expr([H|T], Goals, Out) :-
                                  append(Inner, [Goal], Goals)
                                ; Out = [HV | AVs],
                                  Goals = Inner ) ).
+
+%Translate case expression recursively into nested if
+translate_case([], _Kv, _Out, fail).
+translate_case([[K,VExpr]|Rs], Kv, Out, ( Test -> Out = VOut ; Next)) :- translate_expr(VExpr, Gv, VOut),
+                                                                         goals_list_to_conj(Gv, ConV),
+                                                                         ( ConV == true -> Test = (Kv = K)
+                                                                                         ; Test = (Kv = K, ConV)),
+                                                                         translate_case(Rs, Kv, Out, Next).
 
 %Translate arguments recursively
 translate_args([], [], []).
