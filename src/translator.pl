@@ -16,6 +16,12 @@ goals_list_to_conj([G|Gs], (G,R)) :- goals_list_to_conj(Gs, R).
 arg_to_list([superpose|T], T) :- !.
 arg_to_list(A, [A]).
 
+% Runtime dispatcher: call F if it's a registered fun/1, else keep as list
+maybe_call(F, Args, Out) :- ( nonvar(F), atom(F), fun(F) -> append(Args, [Out], CallArgs),
+                                                            Goal =.. [F|CallArgs],
+                                                            call(Goal)
+                                                          ; Out = [F|Args] ).
+
 %Turn MeTTa code S-expression into goals list
 translate_expr(X, [], X)          :- (var(X) ; atomic(X)), !.
 translate_expr([H|T], Goals, Out) :-
@@ -44,17 +50,36 @@ translate_expr([H|T], Goals, Out) :-
                                            Goal = let(P, V, I, Out),
                                            append(GsH, Gp, A), append(A, Gv, B), append(B, Gi, Inner),
                                            Goals = [Goal | Inner]
-        ; HV == 'let*', T = [Binds, Body] -> translate_expr(Binds, Gb, Bs),
+        ; HV == 'let*', T = [Binds, Body] -> translate_bindings(Binds, Gb, Bs),
                                              translate_expr(Body,  Gd, B),
                                              Goal = 'let*'(Bs, B, Out),
                                              append(GsH, Gb, A), append(A, Gd, Inner),
                                              Goals = [Goal | Inner]
-        ; translate_args(T, GsT, AVs), append(GsH, GsT, Inner),
-          ( atom(HV), fun(HV) -> Out = V, append(AVs, [V], ArgsV),
+        ; translate_args(T, GsT, AVs),
+          append(GsH, GsT, Inner),
+          ( atom(HV), fun(HV) -> Out = V,                        %Known function => direct call
+                                 append(AVs, [V], ArgsV),
                                  Goal =.. [HV|ArgsV],
                                  append(Inner, [Goal], Goals)
-                               ; Out = [HV | AVs],
-                                 Goals = Inner ) ).
+          ; atomic(HV), \+ atom(HV) -> Out = [HV|AVs],           %Literals (numbers, strings, etc.) => data, no dispatcher
+                                       Goals = Inner
+          ; atom(HV), \+ fun(HV) -> Out = [HV|AVs],              %Known non-function atom => data
+                                    Goals = Inner
+          ; append(Inner, [maybe_call(HV, AVs, Out)], Goals) )). %Unknown head (var/compound) => runtime dispatch
+
+%Translate bindings without invoking call
+translate_bindings([], [], []).
+translate_bindings([[Pat, Val]|Rest], Goals, [[P,V]|Bs]) :- translate_pattern(Pat, P),  %Handle LHS as pure data
+                                                            translate_expr(Val, Gv, V), %RHS as normal expr
+                                                            translate_bindings(Rest, Gr, Bs),
+                                                            append(Gv, Gr, Goals).
+
+%Patterns: variables, atoms, numbers, lists
+translate_pattern(X, X) :- var(X), !.
+translate_pattern(X, X) :- atomic(X), !.
+translate_pattern([H|T], [P|Ps]) :- !, translate_pattern(H, P),
+                                       translate_pattern(T, Ps).
+
 
 %Translate case expression recursively into nested if
 translate_case([[K,VExpr]|Rs], Kv, Out, Goal) :- translate_expr(VExpr, Gv, VOut),

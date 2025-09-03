@@ -16,6 +16,8 @@ let(V,Val,In,Out) :- 'let*'([[V,Val]], In, Out).
 '<'(A,B,R)  :- (A<B -> R=true ; R=false).
 '>'(A,B,R)  :- (A>B -> R=true ; R=false).
 '=='(A,B,R) :- (A==B -> R=true ; R=false).
+min(A,B,R)  :- R is min(A,B).
+max(A,B,R)  :- R is max(A,B).
 
 %Boolean Logic:
 and(true,  X, X).
@@ -29,6 +31,10 @@ not(false, true).
 superpose(L,X) :- member(X,L).
 empty(_) :- fail.
 
+%Lists/Tuples:
+'car-atom'([H|_], H).
+'cdr-atom'([_|T], T).
+
 %Diagnostics / Testing:
 'trace!'(In, Content, Out) :- format('~w~n', [In]), Out = Content.
 test(A,B,R) :- (A==B -> E='✅' ; E='❌'),
@@ -39,4 +45,5 @@ test(A,B,R) :- (A==B -> E='✅' ; E='❌'),
 :- dynamic fun/1.
 register_fun(N)   :- (fun(N)->true ; assertz(fun(N))).
 unregister_fun(N) :- retractall(fun(N)).
-:- maplist(register_fun, [superpose, empty, let, 'let*', '+','-','*','/', '%', '<','>','==', and, or, not, test, 'trace!']).
+:- maplist(register_fun, [superpose, empty, let, 'let*', '+','-','*','/', '%', min, max,
+                          '<','>','==', and, or, not, 'car-atom', 'cdr-atom', 'trace!', test]).
