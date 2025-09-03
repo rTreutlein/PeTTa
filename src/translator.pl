@@ -7,6 +7,7 @@ translate_clause(Input, (Head :- (BodyConj, Out=OutBody))) :- sread(Input, Term)
                                                               goals_list_to_conj(GoalsB, BodyConj).
 
 %Conjunction builder, turning goals list to a flat conjunction
+% Conjunction builder that strips 'true' goals
 goals_list_to_conj([], true)      :- !.
 goals_list_to_conj([G], G)        :- !.
 goals_list_to_conj([G|Gs], (G,R)) :- goals_list_to_conj(Gs, R).
@@ -29,8 +30,10 @@ translate_expr([H|T], Goals, Out) :-
         ; HV == if, T = [C,T1,E1] -> translate_expr(C, Gc, Cv), goals_list_to_conj(Gc, ConC),
                                      translate_expr(T1, Gt, Tv), goals_list_to_conj(Gt, ConT),
                                      translate_expr(E1, Ge, Ev), goals_list_to_conj(Ge, ConE),
-                                     append(GsH, [(ConC, (Cv == true -> (ConT, Out = Tv)
-                                                                     ;  (ConE, Out = Ev)))], Goals)
+                                     ( ConT == true -> BT = (Out = Tv) ; BT = (ConT, Out = Tv) ),
+                                     ( ConE == true -> BE = (Out = Ev) ; BE = (ConE, Out = Ev) ),
+                                     ( ConC == true -> append(GsH, [ (Cv == true -> BT ; BE) ], Goals)
+                                                     ; append(GsH, [ (ConC, (Cv == true -> BT ; BE)) ], Goals))
         ; HV == let, T = [Pat, Val, In] -> translate_expr(Pat, Gp, P),
                                            translate_expr(Val, Gv, V),
                                            translate_expr(In,  Gi, I),

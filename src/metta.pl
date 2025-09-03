@@ -12,6 +12,7 @@ let(V,Val,In,Out) :- 'let*'([[V,Val]], In, Out).
 '-'(A,B,R)  :- R is A-B.
 '*'(A,B,R)  :- R is A*B.
 '/'(A,B,R)  :- R is A/B.
+'%'(A,B,R)  :- R is A mod B.
 '<'(A,B,R)  :- (A<B -> R=true ; R=false).
 '>'(A,B,R)  :- (A>B -> R=true ; R=false).
 '=='(A,B,R) :- (A==B -> R=true ; R=false).
@@ -29,11 +30,13 @@ superpose(L,X) :- member(X,L).
 empty(_) :- fail.
 
 %Diagnostics / Testing:
+'trace!'(In, Content, Out) :- format('~w~n', [In]), Out = Content.
 test(A,B,R) :- (A==B -> E='✅' ; E='❌'),
                format(string(R), "is ~w, should ~w. ~w", [A,B,E]).
+
 
 %Registration:
 :- dynamic fun/1.
 register_fun(N)   :- (fun(N)->true ; assertz(fun(N))).
 unregister_fun(N) :- retractall(fun(N)).
-:- maplist(register_fun, [superpose, empty, let, 'let*', '+','-','*','/','<','>','==', and, or, not, test]).
+:- maplist(register_fun, [superpose, empty, let, 'let*', '+','-','*','/', '%', '<','>','==', and, or, not, test, 'trace!']).
