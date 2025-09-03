@@ -57,12 +57,13 @@ translate_expr([H|T], Goals, Out) :-
                                  Goals = Inner ) ).
 
 %Translate case expression recursively into nested if
-translate_case([], _Kv, _Out, fail).
-translate_case([[K,VExpr]|Rs], Kv, Out, ( Test -> Out = VOut ; Next)) :- translate_expr(VExpr, Gv, VOut),
-                                                                         goals_list_to_conj(Gv, ConV),
-                                                                         ( ConV == true -> Test = (Kv = K)
-                                                                                         ; Test = (Kv = K, ConV)),
-                                                                         translate_case(Rs, Kv, Out, Next).
+translate_case([[K,VExpr]|Rs], Kv, Out, Goal) :- translate_expr(VExpr, Gv, VOut),
+                                                 goals_list_to_conj(Gv, ConV),
+                                                 ( ConV == true -> Test = (Kv = K)
+                                                                 ; Test = (Kv = K, ConV) ),
+                                                 ( Rs == [] -> Goal = (Test -> Out = VOut)
+                                                             ; translate_case(Rs, Kv, Out, Next),
+                                                               Goal = (Test -> Out = VOut ; Next) ).
 
 %Translate arguments recursively
 translate_args([], [], []).
