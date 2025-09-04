@@ -65,7 +65,30 @@ translate_expr([H|T], Goals, Out) :-
                                        Goals = Inner
           ; atom(HV), \+ fun(HV) -> Out = [HV|AVs],              %Known non-function atom => data
                                     Goals = Inner
+          ; is_list(HV), HV = [Hdr|Rest], is_list(Hdr), Hdr = [Fh|_], atom(Fh), fun(Fh)
+            -> translate_expr(Hdr, Gh, DynHead),                 %First element is a sublist whose head is a known fun
+               eval_data_list(Rest, Gr, Rest1),
+               append(Inner, Gh, A1), append(A1, Gr, A2),
+               Out = V, append(Rest1, AVs, Args0),
+               ( atom(DynHead), fun(DynHead) -> append(Args0, [V], ArgsV),
+                                                Goal =.. [DynHead|ArgsV],
+                                                append(A2, [Goal], Goals)
+                                              ; append(A2, [maybe_call(DynHead, Args0, V)], Goals) )
+          ; is_list(HV) -> eval_data_term(HV, Gd, HV1),          %Plain data list: evaluate inner fun-sublists
+                           append(Inner, Gd, Goals),
+                           Out = [HV1|AVs]
           ; append(Inner, [maybe_call(HV, AVs, Out)], Goals) )). %Unknown head (var/compound) => runtime dispatch
+
+%Handle data list:
+eval_data_term(X, [], X) :- (var(X); atomic(X)), !.
+eval_data_term([F|As], Goals, Val) :- ( atom(F), fun(F) -> translate_expr([F|As], Goals, Val)
+                                                         ; eval_data_list([F|As], Goals, Val) ).
+
+%Handle data list entry:
+eval_data_list([], [], []).
+eval_data_list([E|Es], Goals, [V|Vs]) :- ( is_list(E) -> eval_data_term(E, G1, V) ; V = E, G1 = [] ),
+                                         eval_data_list(Es, G2, Vs),
+                                         append(G1, G2, Goals).
 
 %Translate bindings without invoking call
 translate_bindings([], [], []).
