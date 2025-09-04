@@ -34,6 +34,9 @@ empty(_) :- fail.
 %Lists/Tuples:
 'car-atom'([H|_], H).
 'cdr-atom'([_|T], T).
+memberfast(X, List, true) :- memberchk(X, List), !.
+memberfast(_, _, false).
+excludefast(A,L,R) :- exclude(==(A), L, R).
 
 %Diagnostics / Testing:
 'trace!'(In, Content, Out) :- format('~w~n', [In]), Out = Content.
@@ -46,4 +49,5 @@ test(A,B,R) :- (A==B -> E='✅' ; E='❌'),
 register_fun(N)   :- (fun(N)->true ; assertz(fun(N))).
 unregister_fun(N) :- retractall(fun(N)).
 :- maplist(register_fun, [superpose, empty, let, 'let*', '+','-','*','/', '%', min, max,
-                          '<','>','==', and, or, not, 'car-atom', 'cdr-atom', 'trace!', test]).
+                          '<','>','==', and, or, not, 'car-atom', 'cdr-atom', 'trace!', test,
+                          append, length, sort, memberfast, excludefast, list_to_set]).

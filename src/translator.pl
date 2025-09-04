@@ -26,10 +26,9 @@ maybe_call(F, Args, Out) :- ( nonvar(F), atom(F), fun(F) -> append(Args, [Out], 
 translate_expr(X, [], X)          :- (var(X) ; atomic(X)), !.
 translate_expr([H|T], Goals, Out) :-
         !, translate_expr(H, GsH, HV),
-        ( HV == superpose, T = [Args], is_list(Args), Args = [F1|Rest], F1 = [superpose|Tail1]
-          -> maplist(arg_to_list, Rest, RestLists),
-             append([Tail1|RestLists], Union),
-             append(GsH, [( member(Sub, Union), ( is_list(Sub) -> member(Out, Sub) ; Out = Sub ))], Goals)
+        ( HV == superpose, T = [Args], is_list(Args) -> build_superpose_branches(Args, Out, Branches),
+                                                        disj_list(Branches, Disj),
+                                                        append(GsH, [Disj], Goals)
         ; HV == collapse, T = [E] -> translate_expr(E, GsE, EV),
                                      goals_list_to_conj(GsE, Conj),
                                      append(GsH, [findall(EV, Conj, Out)], Goals)
@@ -118,3 +117,15 @@ translate_args([], [], []).
 translate_args([X|Xs], Goals, [V|Vs]) :- translate_expr(X, G1, V),
                                          translate_args(Xs, G2, Vs),
                                          append(G1, G2, Goals).
+
+%Build A ; B ; C ... from a list
+disj_list([G], G).
+disj_list([G|Gs], (G ; R)) :- disj_list(Gs, R).
+
+%Build one disjunct per branch: (Conj, Out = Val)
+build_superpose_branches([], _, []).
+build_superpose_branches([E|Es], Out, [B|Bs]) :- translate_expr(E, Gs, Val),
+                                                 goals_list_to_conj(Gs, Conj),
+                                                 ( Conj == true -> B = (Out = Val)
+                                                                 ; B = (Conj, Out = Val) ),
+                                                 build_superpose_branches(Es, Out, Bs).
