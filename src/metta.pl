@@ -50,4 +50,4 @@ register_fun(N)   :- (fun(N)->true ; assertz(fun(N))).
 unregister_fun(N) :- retractall(fun(N)).
 :- maplist(register_fun, [superpose, empty, let, 'let*', '+','-','*','/', '%', min, max,
                           '<','>','==', and, or, not, 'car-atom', 'cdr-atom', 'trace!', test,
-                          append, length, sort, memberfast, excludefast, list_to_set]).
+                          append, length, sort, msort, memberfast, excludefast, list_to_set]).
