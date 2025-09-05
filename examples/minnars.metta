@@ -186,10 +186,10 @@
 (= (|- ((Inheritance $M $P) $T1) ((Similarity $S $M) $T2)) ((Inheritance $S $P) (Truth_Analogy $T1 $T2)))
 (= (|- ((Inheritance $P $M) $T1) ((Similarity $S $M) $T2)) ((Inheritance $P $S) (Truth_Analogy $T1 $T2)))
 ;;!Dealing with properties and instances:
-(= (|- ((Inheritance $S (ExtSet $P)) $T)) ((Similarity $S (ExtSet $P)) (Truth_StructuralIntersection $T))) ;introduces similarity
-(= (|- ((Inheritance (IntSet $S) $P) $T)) ((Similarity (IntSet $S) $P) (Truth_StructuralIntersection $T))) ;introduces similarity
-(= (|- ((Inheritance (ExtSet $M) $P) $T1) ((Similarity $S $M) $T2)) ((Inheritance (ExtSet $S) $P) (Truth_Analogy $T1 $T2)))
-(= (|- ((Inheritance $P (IntSet $M)) $T1) ((Similarity $S $M) $T2)) ((Inheritance $P (IntSet $S)) (Truth_Analogy $T1 $T2)))
+;(= (|- ((Inheritance $S (ExtSet $P)) $T)) ((Similarity $S (ExtSet $P)) (Truth_StructuralIntersection $T))) ;introduces similarity
+;(= (|- ((Inheritance (IntSet $S) $P) $T)) ((Similarity (IntSet $S) $P) (Truth_StructuralIntersection $T))) ;introduces similarity
+;(= (|- ((Inheritance (ExtSet $M) $P) $T1) ((Similarity $S $M) $T2)) ((Inheritance (ExtSet $S) $P) (Truth_Analogy $T1 $T2)))
+;(= (|- ((Inheritance $P (IntSet $M)) $T1) ((Similarity $S $M) $T2)) ((Inheritance $P (IntSet $S)) (Truth_Analogy $T1 $T2)))
 (= (|- ((Similarity (ExtSet $A) (ExtSet $B)))) ((Similarity $A $B) (Truth_StructuralIntersection $T)))
 (= (|- ((Similarity (IntSet $A) (IntSet $B)))) ((Similarity $A $B) (Truth_StructuralIntersection $T)))
 
@@ -257,10 +257,10 @@
 (= (|- ((Inheritance $R (Product $A $B)) $T1) ((Inheritance $B $C) $T2)) ((Inheritance $R (Product $A $C)) (Truth_Deduction $T1 $T2)))
 (= (|- ((Inheritance $R (Product $A $B)) $T1) ((Inheritance $C $B) $T2)) ((Inheritance $R (Product $A $C)) (Truth_Abduction $T1 $T2)))
 (= (|- ((Inheritance $R (Product $A $B)) $T1) ((Similarity $C $B) $T2)) ((Inheritance $R (Product $A $C)) (Truth_Analogy $T1 $T2)))
-(= (|- ((Inheritance (Product $A $B) $R) $T1) ((Inheritance (Product $C $B) $R) $T2)) ((Similarity $A $C) (Truth_Comparison $T1 $T2)))
-(= (|- ((Inheritance (Product $A $B) $R) $T1) ((Inheritance (Product $A $C) $R) $T2)) ((Similarity $B $C) (Truth_Comparison $T1 $T2)))
-(= (|- ((Inheritance $R (Product $A $B)) $T1) ((Inheritance $R (Product $C $B)) $T2)) ((Similarity $A $C) (Truth_Comparison $T1 $T2)))
-(= (|- ((Inheritance $R (Product $A $B)) $T1) ((Inheritance $R (Product $A $C)) $T2)) ((Similarity $B $C) (Truth_Comparison $T1 $T2)))
+;(= (|- ((Inheritance (Product $A $B) $R) $T1) ((Inheritance (Product $C $B) $R) $T2)) ((Similarity $A $C) (Truth_Comparison $T1 $T2)))
+;(= (|- ((Inheritance (Product $A $B) $R) $T1) ((Inheritance (Product $A $C) $R) $T2)) ((Similarity $B $C) (Truth_Comparison $T1 $T2)))
+;(= (|- ((Inheritance $R (Product $A $B)) $T1) ((Inheritance $R (Product $C $B)) $T2)) ((Similarity $A $C) (Truth_Comparison $T1 $T2)))
+;(= (|- ((Inheritance $R (Product $A $B)) $T1) ((Inheritance $R (Product $A $C)) $T2)) ((Similarity $B $C) (Truth_Comparison $T1 $T2)))
 
 ;;NAL-5
 ;;!Negation conjunction and disjunction decomposition:
