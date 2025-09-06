@@ -1,1 +1,1 @@
-swipl -q -s ./src/main.pl -g main -t halt -- $1
+swipl -q -s ./src/main.pl -g main -t halt -- $*
