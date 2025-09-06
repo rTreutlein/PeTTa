@@ -20,9 +20,9 @@ assert_function(FormStr) :- sread(FormStr, Term),
                             assertz(Clause),
                             ( current_prolog_flag(argv, Args) -> true ; Args = [] ),
                             ( \+ ( member(Flag, Args), ( Flag == silent ; Flag == '--silent' ; Flag == '-s' ) )
-                            -> format("~w~n---->~n", [FormStr]),
-                               listing(FAtom)
-                            ;  true ).
+                              -> format("~w~n---->~n", [FormStr]),
+                                 listing(FAtom)
+                               ; true ).
 
 % Collect characters until all parentheses are balanced (depth 0), accumulating codes
 grab_until_balanced(D,Acc,Cs) --> [C], { ( C=0'( -> D1 is D+1 ; C=0') -> D1 is D-1 ; D1=D ), Acc1=[C|Acc] },
