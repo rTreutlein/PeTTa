@@ -295,7 +295,7 @@
 (= (|- ((Implication $P $M) $T1) ((Equivalence $S $M) $T2)) ((Implication $P $S) (Truth_Analogy $T1 $T2)))
 (= (|- ((Equivalence $M $P) $T1) ((Equivalence $S $M) $T2)) ((Equivalence $S $P) (Truth_Resemblance $T1 $T2)))
 ;;!Higher-order decomposition
-(= (|-o ($A $T1) ((Implication $A $B) $T2)) ($B (Truth_Deduction $T1 $T2)))
+(= (|- ($A $T1) ((Implication $A $B) $T2)) ($B (Truth_Deduction $T1 $T2)))
 (= (|- ($A $T1) ((Implication (Conjunction $A $B) $C) $T2)) ((Implication $B $C) (Truth_Deduction $T1 $T2)))
 (= (|- ($B $T1) ((Implication $A $B) $T2)) ($A (Truth_Abduction $T1 $T2)))
 (= (|- ($A $T1) ((Equivalence $A $B) $T2)) ($B (Truth_Analogy $T1 $T2)))
@@ -355,14 +355,11 @@
             (let $derivations
                  (collapse (superpose ((let* (((Sentence $y $Ev2) (superpose $Beliefs))
                                               ($stamp (InsertionSort (TupleConcat $Ev1 $Ev2) ())))
-                                             (superpose ((if (StampDisjoint $Ev1 $Ev2)
-                                                             (case (superpose ((|- $x $y)
-                                                                               (|- $y $x)))
-                                                                   ((($T $TV) (Sentence ($T $TV) $stamp))))
-                                                             (empty))
-                                                          (case (superpose ((|-o $x $y)
-                                                                            (|-o $y $x)))
-                                                                   ((($T $TV) (Sentence ($T $TV) $Ev1)))))))
+                                             (if (StampDisjoint $Ev1 $Ev2)
+                                                 (case (superpose ((|- $x $y)
+                                                                   (|- $y $x)))
+                                                       ((($T $TV) (Sentence ($T $TV) $stamp))))
+                                                 (empty)))
                                        (case (|- $x) ((($T3 $TV3) (Sentence ($T3 $TV3) $Ev1)))))))
                  (let $temp (trace! (SELECTED $steps (Sentence $x $Ev1)) 42)
                             (PLN.Derive (LimitSize (Without (Unique (TupleConcat $Tasks $derivations) ()) (Sentence $x $Ev1)) $taskqueuesize)
@@ -442,7 +439,7 @@
    (test (PLN.Query (kb)
                     (Inheritance Edward
                                  (IntSet cancerous)))
-       ((stv 0.6000000000000001 0.6556532945942679) (2 5 6 9 10))))
+       ((stv 0.6 0.48941156079382964) (2 5 6 9 10))))
 
 !(wu)
 
