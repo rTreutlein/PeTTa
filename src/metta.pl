@@ -17,6 +17,8 @@ let(V,Val,In,Out) :- 'let*'([[V,Val]], In, Out).
 '>'(A,B,R)  :- (A>B -> R=true ; R=false).
 '=='(A,B,R) :- (A==B -> R=true ; R=false).
 '='(A,B,R) :- (A=B -> R=true ; R=false).
+'<='(A,B,R) :- (A =< B -> R=true ; R=false).
+'>='(A,B,R) :- (A => B -> R=true ; R=false).
 min(A,B,R)  :- R is min(A,B).
 max(A,B,R)  :- R is max(A,B).
 
@@ -74,6 +76,6 @@ match(Space, [Rel|PatArgs], OutPattern, Result) :- Term =.. [Space, Rel | PatArg
 register_fun(N)   :- (fun(N)->true ; assertz(fun(N))).
 unregister_fun(N) :- retractall(fun(N)).
 :- maplist(register_fun, [superpose, empty, let, 'let*', '+','-','*','/', '%', min, max,
-                          '<','>','==', '=', and, or, not, 'car-atom', 'cdr-atom', 'trace!', test,
+                          '<','>','==', '=', '<=', '>=', and, or, not, 'car-atom', 'cdr-atom', 'trace!', test,
                           append, length, sort, msort, memberfast, excludefast, list_to_set,
                           'add-atom', 'remove-atom', 'match']).
