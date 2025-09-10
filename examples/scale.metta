@@ -29,7 +29,7 @@
           ($second (q-second 3))
           ($rel (q-rel r))
           ($both (q-both 42 2)))
-         (all: $all first: $first second: $second rel: $rel both: $both)))
+         (all: (length $all) first: (length $first) second: (length $second) rel: (length $rel) both: (length $both))))
 
-;test with K atoms
-!(indexing-demo 1000000)
+;Just the elements
+!(test (indexing-demo 1000000) (all: 1000000 first: 1 second: 100000 rel: 1 both: 1))
