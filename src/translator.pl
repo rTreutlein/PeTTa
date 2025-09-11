@@ -107,9 +107,14 @@ translate_pattern([H|T], [P|Ps]) :- !, translate_pattern(H, P),
 translate_case([[K,VExpr]|Rs], Kv, Out, Goal) :- translate_expr(VExpr, Gv, VOut),
                                                  goals_list_to_conj(Gv, ConV),
                                                  Test = (Kv = K),
-                                                 ( Rs == [] -> Goal = (Test -> (ConV , Out = VOut))
-                                                             ; translate_case(Rs, Kv, Out, Next),
-                                                               Goal = (Test -> (ConV , Out = VOut) ; Next) ).
+                                                 (ConV == true -> 
+                                                   ( Rs == [] -> Goal = (Test -> (Out = VOut))
+                                                               ; translate_case(Rs, Kv, Out, Next),
+                                                                 Goal = (Test -> (Out = VOut) ; Next) )
+                                                   ;
+                                                   ( Rs == [] -> Goal = (Test -> (ConV , Out = VOut))
+                                                               ; translate_case(Rs, Kv, Out, Next),
+                                                                 Goal = (Test -> (ConV , Out = VOut) ; Next) )).
 
 %Translate arguments recursively
 translate_args([], [], []).
