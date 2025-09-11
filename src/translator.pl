@@ -106,11 +106,10 @@ translate_pattern([H|T], [P|Ps]) :- !, translate_pattern(H, P),
 %Translate case expression recursively into nested if
 translate_case([[K,VExpr]|Rs], Kv, Out, Goal) :- translate_expr(VExpr, Gv, VOut),
                                                  goals_list_to_conj(Gv, ConV),
-                                                 ( ConV == true -> Test = (Kv = K)
-                                                                 ; Test = (Kv = K, ConV) ),
-                                                 ( Rs == [] -> Goal = (Test -> Out = VOut)
+                                                 Test = (Kv = K),
+                                                 ( Rs == [] -> Goal = (Test -> (ConV , Out = VOut))
                                                              ; translate_case(Rs, Kv, Out, Next),
-                                                               Goal = (Test -> Out = VOut ; Next) ).
+                                                               Goal = (Test -> (ConV , Out = VOut) ; Next) ).
 
 %Translate arguments recursively
 translate_args([], [], []).
