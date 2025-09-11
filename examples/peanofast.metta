@@ -10,4 +10,4 @@
    (let $g (expandK Z $K)
         (match &self (num $1) $1)))
 
-!(test (length (collapse (demo-peano 300))) 300)
+!(test (length (collapse (demo-peano 1000))) 1000)

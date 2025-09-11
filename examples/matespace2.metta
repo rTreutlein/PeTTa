@@ -1,20 +1,21 @@
+;match-once can be replaced with match here without changing behavior but would be slower:
 (= (add-atom-no-duplicate $Space $Atom)
-   (if (== () (collapse (match $Space $Atom $Atom)))
+   (if (== () (collapse (match-once $Space $Atom $Atom)))
        (add-atom $Space $Atom)
        (empty)))
 
-; Rewrite rules:
+;Rewrite rules:
 (= (expand)
    (case (match &self (num $t) $t) 
-         (($x ((add-atom-no-duplicate &self (num (M $x)))
-               (add-atom-no-duplicate &self (num (W $x))))))))
+         (($t ((add-atom-no-duplicate &self (num (M $t)))
+               (add-atom-no-duplicate &self (num (W $t))))))))
 
 (= (mate)
    (case (match &self (num (M $t)) $t)
-         (($x (case (match &self (num (W $t)) $t)
-                    (($x (add-atom-no-duplicate &self (num (C $x))))))))))
+         (($t (case (match-once &self (num (W $t)) $t)
+                    (($t (add-atom-no-duplicate &self (num (C $t))))))))))
 
-; Apply expand and mate K times:
+;Apply expand and mate K times:
 (= (rewriteK $n)
    (if (== $n 0)
        done
@@ -22,7 +23,7 @@
               ($temp2 (mate)))
              (rewriteK (- $n 1)))))
 
-; Apply the rewrites K times, then match:
+;Apply the rewrites K times, then match:
 (= (mate-space-demo $K)
    (let* (($s (add-atom &self (num Z)))
           ($g (rewriteK $K)))

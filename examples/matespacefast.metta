@@ -7,10 +7,10 @@
              ((rewriteK (M $t) (- $n 1))
               (rewriteK (W $t) (- $n 1))))))
 
-; Apply the rewrites K times, then match:
+;Apply the rewrites K times, then match:
 (= (mate-space-demo $K)
    (let* (($s (add-atom &self (num Z)))
           ($g (rewriteK Z $K)))
           (match &self (num $1) (num $1))))
 
-!(length (collapse (mate-space-demo 19)))
+!(test (length (collapse (mate-space-demo 19))) 1572862)

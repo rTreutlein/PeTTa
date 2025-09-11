@@ -33,6 +33,7 @@ not(false, true).
 %%% Nondeterminism: %%%
 superpose(L,X) :- member(X,L).
 empty(_) :- fail.
+cut(R) :- !, R=true.
 
 %%% Lists / Tuples: %%%
 'car-atom'([H|_], H).
@@ -56,13 +57,14 @@ ensure_dynamic_arity(Space,Arity) :- ( current_predicate(Space/Arity)
                                        Term =.. [Space, Rel | Args],
                                        assertz(Term).
 
-'remove-atom'(Space, [Rel|Args], Result) :- length(Args, N), Arity is N + 2,
-                                            ensure_dynamic_arity(Space, Arity),
-                                            Term =.. [Space, Rel | Args],
-                                            ( clause(Term, true)
-                                              -> retractall(Term),
-                                                 Result = true
-                                               ; Result = false ).
+'remove-atom'(Space, [Rel|Args], true) :- length(Args, N), Arity is N + 2,
+                                          ensure_dynamic_arity(Space, Arity),
+                                          Term =.. [Space, Rel | Args],
+                                          ( clause(Term, true)
+                                            -> retractall(Term) ).
+
+%Match only a single instance, existential check
+'match-once'(Space, Pattern, OutPattern, Result) :- once(match(Space, Pattern, OutPattern, Result)).
 
 %Function evaluation matches, where the unification returned true, so it unified:
 match('&self', true, Arg2, Result) :- Result=Arg2.
@@ -75,7 +77,7 @@ match(Space, [Rel|PatArgs], OutPattern, Result) :- Term =.. [Space, Rel | PatArg
 :- dynamic fun/1.
 register_fun(N)   :- (fun(N)->true ; assertz(fun(N))).
 unregister_fun(N) :- retractall(fun(N)).
-:- maplist(register_fun, [superpose, empty, let, 'let*', '+','-','*','/', '%', min, max,
+:- maplist(register_fun, [superpose, empty, cut, let, 'let*', '+','-','*','/', '%', min, max,
                           '<','>','==', '=', '<=', '>=', and, or, not, 'car-atom', 'cdr-atom', 'trace!', test,
                           append, length, sort, msort, memberfast, excludefast, list_to_set,
-                          'add-atom', 'remove-atom', 'match']).
+                          'add-atom', 'remove-atom', 'match', 'match-once']).
