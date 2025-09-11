@@ -6,7 +6,7 @@ load_metta_file(Filename) :- read_file_to_string(Filename, S, []),
                              process_metta_string(S).
 
 %Extract function definitions and process each, whereby !(Z) is transformed to (= (run) (Z)):
-process_metta_string(S) :- re_replace("(?m)^\\s*!\\s*\\((.*)\\)\\s*$", "(= (run) (\\1))", S, S1, [global]),
+process_metta_string(S) :- re_replace("(?ms)^\\s*!\\s*\\((.*)\\)\\s*$", "(= (run) (\\1))", S, S1, [global]),
                            string_codes(S1, Cs),
                            phrase(top_forms(Forms), Cs),
                            maplist(assert_function, Forms).

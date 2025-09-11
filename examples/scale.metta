@@ -32,4 +32,5 @@
          (all: (length $all) first: (length $first) second: (length $second) rel: (length $rel) both: (length $both))))
 
 ;Just the elements
-!(test (indexing-demo 1000000) (all: 1000000 first: 1 second: 100000 rel: 1 both: 1))
+!(test (indexing-demo 1000000)
+       (all: 1000000 first: 1 second: 100000 rel: 1 both: 1))

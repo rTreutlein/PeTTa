@@ -1,3 +1,4 @@
 (= (y) (empty))
 
-!(test (collapse (y)) ())
+!(test (collapse (y))
+       ())

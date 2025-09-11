@@ -16,4 +16,5 @@
 ;   (let $temp (successor $X $Z)
 ;        (later-in-alphabet $Z $Y)))
 
-!(test (collapse ((later-in-alphabet d $1) $1)) ((True c) (True b) (True a)))
+!(test (collapse ((later-in-alphabet d $1) $1))
+       ((True c) (True b) (True a)))

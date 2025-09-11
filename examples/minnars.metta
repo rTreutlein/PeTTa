@@ -435,11 +435,8 @@
                             (IntSet smokes))
                (stv 1.0 0.9)) (10))))
 
-(= (wu)
-   (test (PLN.Query (kb)
-                    (Inheritance Edward
-                                 (IntSet cancerous)))
-       ((stv 0.6 0.48941156079382964) (2 5 6 9 10))))
-
-!(wu)
+!(test (PLN.Query (kb)
+                  (Inheritance Edward
+                               (IntSet cancerous)))
+       ((stv 0.6 0.48941156079382964) (2 5 6 9 10)))
 

@@ -5,4 +5,5 @@
        (TupleConcat ($K) (range (+ $K 1) $N))
        ()))
 
-!(test (range 1 10) (1 2 3 4 5 6 7 8 9))
+!(test (range 1 10)
+       (1 2 3 4 5 6 7 8 9))

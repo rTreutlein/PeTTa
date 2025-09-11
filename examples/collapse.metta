@@ -1,1 +1,2 @@
-!(test (collapse (1 2 3)) ((1 2 3)))
+!(test (collapse (1 2 3))
+       ((1 2 3)))

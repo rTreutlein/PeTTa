@@ -8,4 +8,5 @@
    (superpose ((wu1)
                (wu2))))
 
-!(test (wu) (full))
+!(test (wu)
+       (full))

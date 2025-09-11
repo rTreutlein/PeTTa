@@ -8,4 +8,5 @@
                                     ($else (42 42 42))))
                       answertoeverything)))
 
-!(test (collapse (progme)) (answertoeverything 42 (42 42) (42 42 42)))
+!(test (collapse (progme))
+       (answertoeverything 42 (42 42) (42 42 42)))

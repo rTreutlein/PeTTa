@@ -9,4 +9,8 @@
 (= (prime? $n)
    (== $n (find-divisor $n 2)))
 
-!(test ((prime? 53537257) (prime? 53781811) (prime? 54218443) (prime? 54734431)) (True True True True))
+!(test ((prime? 53537257)
+        (prime? 53781811)
+        (prime? 54218443)
+        (prime? 54734431))
+       (True True True True))
