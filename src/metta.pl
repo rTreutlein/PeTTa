@@ -73,6 +73,13 @@ match('&self', true, Arg2, Result) :- Result=Arg2.
 match(Space, [Rel|PatArgs], OutPattern, Result) :- Term =.. [Space, Rel | PatArgs],
                                                    Term, Result = OutPattern.
 
+%Get all atoms in space, irregard of arity:
+'get-atoms'(Space, Pattern) :- current_predicate(Space/Arity),
+                               functor(Head, Space, Arity),
+                               clause(Head, true),
+                               Head =.. [Space | Pattern].
+
+
 %Registration:
 :- dynamic fun/1.
 register_fun(N)   :- (fun(N)->true ; assertz(fun(N))).
@@ -80,4 +87,4 @@ unregister_fun(N) :- retractall(fun(N)).
 :- maplist(register_fun, [superpose, empty, cut, let, 'let*', '+','-','*','/', '%', min, max,
                           '<','>','==', '=', '<=', '>=', and, or, not, 'car-atom', 'cdr-atom', 'trace!', test,
                           append, length, sort, msort, memberfast, excludefast, list_to_set,
-                          'add-atom', 'remove-atom', 'match', 'match-once']).
+                          'add-atom', 'remove-atom', 'get-atoms', 'match', 'match-once']).

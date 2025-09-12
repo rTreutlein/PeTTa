@@ -5,9 +5,15 @@
 load_metta_file(Filename) :- read_file_to_string(Filename, S, []),
                              process_metta_string(S).
 
+%Replace !(EXP) with (= (run) (EXP))
+re_replace_all(PFrom, PTo, S, Out) :- re_replace(PFrom, PTo, S, S1),
+                                      ( S1 \== S -> re_replace_all(PFrom, PTo, S1, Out)
+                                                  ; Out = S ).
+
 %Extract function definitions and process each, whereby !(Z) is transformed to (= (run) (Z)):
-process_metta_string(S) :- re_replace("(?ms)^\\s*!\\s*\\((.*)\\)\\s*$", "(= (run) (\\1))", S, S1, [global]),
-                           string_codes(S1, Cs),
+process_metta_string(S) :- re_replace_all("(?m)^\\s*!\\s*\\(((?:[^()]|\\((?-1)\\))*)\\)",
+                                          "(= (run) (\\1))", S, T),
+                           string_codes(T, Cs),
                            phrase(top_forms(Forms), Cs),
                            maplist(assert_function, Forms).
 
