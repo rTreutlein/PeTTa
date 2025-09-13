@@ -47,23 +47,26 @@ excludefast(A,L,R) :- exclude(==(A), L, R).
 test(A,B,R) :- (A==B -> E='✅' ; E='❌'),
                format(string(R), "is ~w, should ~w. ~w", [A,B,E]).
 
-%%% Spaces %%%
+%%% Spaces: %%%
 
+%Arity expander for JIT-indexing-efficient representation of space entries:
 ensure_dynamic_arity(Space,Arity) :- ( current_predicate(Space/Arity)
                                        -> true ; dynamic(Space/Arity) ).
 
+%Add an atom to the space:
 'add-atom'(Space, [Rel|Args], true) :- length(Args, N), Arity is N + 2,
                                        ensure_dynamic_arity(Space, Arity),
                                        Term =.. [Space, Rel | Args],
                                        assertz(Term).
 
+%Remove all same atoms:
 'remove-atom'(Space, [Rel|Args], true) :- length(Args, N), Arity is N + 2,
                                           ensure_dynamic_arity(Space, Arity),
                                           Term =.. [Space, Rel | Args],
                                           ( clause(Term, true)
                                             -> retractall(Term) ).
 
-%Match only a single instance, existential check
+%Match only a single instance, existential check:
 'match-once'(Space, Pattern, OutPattern, Result) :- once(match(Space, Pattern, OutPattern, Result)).
 
 %Function evaluation matches, where the unification returned true, so it unified:
@@ -80,7 +83,7 @@ match(Space, [Rel|PatArgs], OutPattern, Result) :- Term =.. [Space, Rel | PatArg
                                Head =.. [Space | Pattern].
 
 
-%Registration:
+%%% Registration: %%%
 :- dynamic fun/1.
 register_fun(N)   :- (fun(N)->true ; assertz(fun(N))).
 unregister_fun(N) :- retractall(fun(N)).
