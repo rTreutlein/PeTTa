@@ -11,10 +11,13 @@ re_replace_all(PFrom, PTo, S, Out) :- re_replace(PFrom, PTo, S, S1),
                                                   ; Out = S ).
 
 %Extract function definitions and process each, whereby !(Z) is transformed to (= (run) (Z)):
-process_metta_string(S) :- re_replace_all("(?m)^\\s*!\\s*\\(((?:[^()]|\\((?-1)\\))*)\\)",
-                                          "(= (run) (\\1))", S, T),
-                           string_codes(T, Cs),
-                           phrase(top_forms(Forms), Cs),
+process_metta_string(S) :- split_string(S, "\n", "", L0),
+                           findall(C, (member(L,L0), split_string(L,";","",[C|_])), L1),
+                           atomic_list_concat(L1, '\n', CodeWithoutComment),
+                           re_replace_all("(?m)^\\s*!\\s*\\(((?:[^()]|\\((?-1)\\))*)\\)",
+                                          "(= (run) (\\1))", CodeWithoutComment, FunctionizedCode),
+                           string_codes(FunctionizedCode, Codes),
+                           phrase(top_forms(Forms), Codes),
                            maplist(assert_function, Forms).
 
 %From a function string: parse, extract first atom as name, register, transform to relation, assert.
@@ -36,5 +39,4 @@ grab_until_balanced(D,Acc,Cs) --> [C], { ( C=0'( -> D1 is D+1 ; C=0') -> D1 is D
 
 %Read a balanced (...) block if available, turn into string, then continue with rest, ignoring comment lines
 top_forms([])     --> blanks, eos.
-top_forms(Fs)     --> blanks, ";", string_without("\n", _), (eol ; eos), !, top_forms(Fs).
 top_forms([F|Fs]) --> blanks, "(", grab_until_balanced(1, [0'(], Cs), { string_codes(F, Cs) }, top_forms(Fs).
