@@ -52,6 +52,8 @@ translate_expr([H|T], Goals, Out) :-
                                              Goal = 'let*'(Bs, B, Out),
                                              append(GsH, Gb, A), append(A, Gd, Inner),
                                              Goals = [Goal | Inner]
+        ; HV == cut, T = [] -> append(GsH, [(!)], Goals),
+                               Out = true
         ; translate_args(T, GsT, AVs),
           append(GsH, GsT, Inner),
           ( atom(HV), fun(HV) -> Out = V,                        %Known function => direct call
