@@ -1,0 +1,11 @@
+!(let* (($M1 ((1 2 3)
+              (4 5 6)))
+        ($M2 (( 7  8  9 10)
+              (11 12 13 14)
+              (15 16 17 18)))
+        ($A (python (torch:tensor $M1)))
+        ($B (python (torch:tensor $M2)))
+        ($C (python (torch:matmul $A $B)))
+        ($L (python (.tolist $C))))
+       $L)
+             
