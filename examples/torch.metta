@@ -1,8 +1,8 @@
 ;Clean separation from Python calls
-(= (tensor $x)      (py-call (torch.tensor $x)))
-(= (mul $A $B)      (py-call (torch.matmul $A $B)))
+(= (tensor $x) (py-call (torch.tensor $x)))
+(= (mul $A $B) (py-call (torch.matmul $A $B)))
 (= (tensor2list $x) (py-call (.tolist $x)))
-(= (size2list $x)   (py-call (list $x)))
+(= (size2list $x) (py-call (list $x)))
 (= (shape $x) (size2list (py-call (getattr $x shape))))
 
 ;Clean program using Tensors:
