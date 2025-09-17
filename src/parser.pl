@@ -19,7 +19,7 @@ seq([],E,E)       --> [].
 var_symbol(V,E0,E) --> "$", token(Cs), { atom_chars(N, Cs), ( memberchk(N-V0, E0) -> V=V0, E=E0 ; V=_, E=[N-V|E0] ) }.
 
 %Atoms are just tokens:
-atom_symbol(A) --> token(Cs), { atom_codes(A0,Cs), downcase_atom(A0,A) }.
+atom_symbol(A) --> token([C0|Rest]), { code_type(C0, to_upper(L0)), atom_codes(A, [L0|Rest]) }.
 
 %A token is a non-empty string without whitespace:
 token(Cs) --> string_without(" \t\r\n()", Cs), { Cs \= [] }.

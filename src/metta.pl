@@ -82,6 +82,27 @@ match(Space, [Rel|PatArgs], OutPattern, Result) :- Term =.. [Space, Rel | PatArg
                                Head =.. [Space | Pattern].
 
 
+%%% Python bindings: %%%
+'py-call'(SpecList, Result) :- 'py-call'(SpecList, Result, []).
+'py-call'([Spec|Args], Result, Opts) :- ( string(Spec) -> atom_string(A, Spec) ; A = Spec ),
+                                        must_be(atom, A),
+                                        ( sub_atom(A, 0, 1, _, '.')         % ".method"
+                                          -> sub_atom(A, 1, _, 0, Fun),
+                                             Args = [Obj|Rest],
+                                             ( Rest == []
+                                               -> compound_name_arguments(Meth, Fun, [])
+                                                ; Meth =.. [Fun|Rest] ),
+                                             py_call(Obj:Meth, Result, Opts)
+                                           ; atomic_list_concat([M,F], '.', A) % "mod.fun"
+                                             -> ( Args == []
+                                                  -> compound_name_arguments(Call0, F, [])
+                                                   ; Call0 =.. [F|Args] ),
+                                                py_call(M:Call0, Result, Opts)
+                                              ; ( Args == []                      % bare "fun"
+                                                  -> compound_name_arguments(Call0, A, [])
+                                                   ; Call0 =.. [A|Args] ),
+                                                py_call(builtins:Call0, Result, Opts) ).
+
 %%% Registration: %%%
 :- dynamic fun/1.
 register_fun(N)   :- (fun(N)->true ; assertz(fun(N))).
@@ -89,4 +110,4 @@ unregister_fun(N) :- retractall(fun(N)).
 :- maplist(register_fun, [superpose, empty, let, 'let*', '+','-','*','/', '%', min, max,
                           '<','>','==', '=', '<=', '>=', and, or, not, 'car-atom', 'cdr-atom', 'trace!', test,
                           append, length, sort, msort, memberfast, excludefast, list_to_set,
-                          'add-atom', 'remove-atom', 'get-atoms', 'match', 'match-once']).
+                          'add-atom', 'remove-atom', 'get-atoms', 'match', 'match-once', 'py-call']).
