@@ -1,0 +1,18 @@
+(: a A)
+(: b B)
+(: A Type)
+(: x Letter)
+(: x Buchstabe)
+
+!(test (get-type a) A)
+!(test (get-type b) B)
+!(test (get-type c) %Undefined%)
+!(test (get-type A) Type)
+!(test (get-type B) %Undefined%)
+!(test (get-type (a b)) (A B))
+!(test (get-type 42) Number)
+!(test (get-type "42") String)
+
+
+
+!(test (collapse (get-type x)) (Letter Buchstabe))

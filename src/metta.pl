@@ -5,7 +5,7 @@
 %%% Let bindings: %%%
 'let*'([], B, B).
 'let*'([[V,Val]|Rs], B, Out) :- V = Val, 'let*'(Rs, B, Out).
-let(V,Val,In,Out) :- 'let*'([[V,Val]], In, Out).
+let(V, Val, In, Out) :- 'let*'([[V,Val]], In, Out).
 
 %%% Arithmetic & Comparison: %%%
 '+'(A,B,R)  :- R is A + B.
@@ -39,12 +39,12 @@ empty(_) :- fail.
 'cdr-atom'([_|T], T).
 memberfast(X, List, true) :- memberchk(X, List), !.
 memberfast(_, _, false).
-excludefast(A,L,R) :- exclude(==(A), L, R).
+excludefast(A, L, R) :- exclude(==(A), L, R).
 
 %%% Diagnostics / Testing: %%%
 'trace!'(In, Content, Out) :- format('~w~n', [In]), Out = Content.
-test(A,B,R) :- (A==B -> E='✅' ; E='❌'),
-               format(string(R), "is ~w, should ~w. ~w", [A,B,E]).
+test(A,B,R) :- (A == B -> E = '✅' ; E = '❌'),
+               format(string(R), "is ~w, should ~w. ~w ~n", [A, B, E]).
 
 %%% Spaces: %%%
 
@@ -69,7 +69,7 @@ ensure_dynamic_arity(Space,Arity) :- ( current_predicate(Space/Arity)
 'match-once'(Space, Pattern, OutPattern, Result) :- once(match(Space, Pattern, OutPattern, Result)).
 
 %Function evaluation matches, where the unification returned true, so it unified:
-match('&self', true, Arg2, Result) :- Result=Arg2.
+match('&self', true, Arg2, Result) :- Result = Arg2.
 
 %Match for pattern:
 match(Space, [Rel|PatArgs], OutPattern, Result) :- Term =.. [Space, Rel | PatArgs],
@@ -103,6 +103,23 @@ match(Space, [Rel|PatArgs], OutPattern, Result) :- Term =.. [Space, Rel | PatArg
                                                    ; Call0 =.. [A|Args] ),
                                                 py_call(builtins:Call0, Result, Opts) ).
 
+
+%%% Type system: %%%
+get_function_type([F,Arg], T) :- match('&self', [':',F,['->',A,B]], _, _),
+                                 'get-type'(Arg, A),
+                                 T = B.
+
+'get-type'(X, 'Number')   :- number(X), !.
+'get-type'(X, 'Variable') :- var(X), !.
+'get-type'(X, 'String')   :- string(X), !.
+'get-type'(true, 'Bool')  :- !.
+'get-type'(false, 'Bool') :- !.
+'get-type'(X, T) :- get_function_type(X,T).
+'get-type'(X, T) :- \+ get_function_type(X, _),
+                    is_list(X),
+                    maplist('get-type', X, T).
+'get-type'(X, T) :- match('&self', [':',X,T], T, _).
+
 %%% Registration: %%%
 :- dynamic fun/1.
 register_fun(N)   :- (fun(N)->true ; assertz(fun(N))).
@@ -110,4 +127,4 @@ unregister_fun(N) :- retractall(fun(N)).
 :- maplist(register_fun, [superpose, empty, let, 'let*', '+','-','*','/', '%', min, max,
                           '<','>','==', '=', '<=', '>=', and, or, not, 'car-atom', 'cdr-atom', 'trace!', test,
                           append, length, sort, msort, memberfast, excludefast, list_to_set,
-                          'add-atom', 'remove-atom', 'get-atoms', 'match', 'match-once', 'py-call']).
+                          'add-atom', 'remove-atom', 'get-atoms', 'match', 'match-once', 'py-call', 'get-type']).

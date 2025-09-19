@@ -18,7 +18,6 @@ process_metta_string(S) :- split_string(S, "\n", "", L0),
                                           "(= (run) (\\1))", CodeWithoutComment, FunctionizedCode),
                            string_codes(FunctionizedCode, Codes),
                            phrase(top_forms(Forms), Codes),
-                           format("~w~n", [Forms]),
                            maplist(assert_function, Forms).
 
 %Functions stay functions and runaway S-expressions become add-atom calls with result omitted:

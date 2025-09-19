@@ -18,8 +18,14 @@ seq([],E,E)       --> [].
 %Variables start with $, and keep track of them: re-using exising Prolog variables for variables of same name:
 var_symbol(V,E0,E) --> "$", token(Cs), { atom_chars(N, Cs), ( memberchk(N-V0, E0) -> V=V0, E=E0 ; V=_, E=[N-V|E0] ) }.
 
-%Atoms are just tokens:
-atom_symbol(A) --> token(Cs), { atom_codes(R, Cs), ( R = 'True' -> A = true ; R = 'False' -> A = false ; A = R ) }.
+%Atoms are derived from tokens:
+atom_symbol(A) --> token(Cs), { string_codes("\"", [Q]), ( Cs = [Q|_] -> append([Q|Body], [Q], Cs), %"str" as string
+                                                                         string_codes(A, Body)
+                                                                       ; atom_codes(R, Cs),         %others are atoms
+                                                                         ( R = 'True' -> A = true
+                                                                                       ; R = 'False'
+                                                                                         -> A = false
+                                                                                          ; A = R ))}.
 
 %A token is a non-empty string without whitespace:
 token(Cs) --> string_without(" \t\r\n()", Cs), { Cs \= [] }.
