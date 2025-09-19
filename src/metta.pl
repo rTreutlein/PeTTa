@@ -105,10 +105,13 @@ match(Space, [Rel|PatArgs], OutPattern, Result) :- Term =.. [Space, Rel | PatArg
 
 
 %%% Type system: %%%
+
+%Query for the type definitions of functions
 get_function_type([F,Arg], T) :- match('&self', [':',F,['->',A,B]], _, _),
                                  'get-type'(Arg, A),
                                  T = B.
 
+%Type resolution:
 'get-type'(X, 'Number')   :- number(X), !.
 'get-type'(X, 'Variable') :- var(X), !.
 'get-type'(X, 'String')   :- string(X), !.
@@ -120,6 +123,16 @@ get_function_type([F,Arg], T) :- match('&self', [':',F,['->',A,B]], _, _),
                     maplist('get-type', X, T).
 'get-type'(X, T) :- match('&self', [':',X,T], T, _).
 
+%Meta-types:
+'get-metatype'(X, 'Variable') :- var(X), !.
+'get-metatype'(X, 'Grounded') :- number(X), !.
+'get-metatype'(X, 'Grounded') :- string(X), !.
+'get-metatype'(true,  'Grounded') :- !.
+'get-metatype'(false, 'Grounded') :- !.
+'get-metatype'(X, 'Grounded') :- atom(X), fun(X), !.  % e.g., '+' is a registered fun/1
+'get-metatype'(X, 'Expression') :- is_list(X), !.     % e.g., (+ 1 2), (a b)
+'get-metatype'(X, 'Symbol') :- atom(X), !.            % e.g., a
+
 %%% Registration: %%%
 :- dynamic fun/1.
 register_fun(N)   :- (fun(N)->true ; assertz(fun(N))).
@@ -127,4 +140,5 @@ unregister_fun(N) :- retractall(fun(N)).
 :- maplist(register_fun, [superpose, empty, let, 'let*', '+','-','*','/', '%', min, max,
                           '<','>','==', '=', '<=', '>=', and, or, not, 'car-atom', 'cdr-atom', 'trace!', test,
                           append, length, sort, msort, memberfast, excludefast, list_to_set,
-                          'add-atom', 'remove-atom', 'get-atoms', 'match', 'match-once', 'py-call', 'get-type']).
+                          'add-atom', 'remove-atom', 'get-atoms', 'match', 'match-once',
+                          'py-call', 'get-type', 'get-metatype']).
