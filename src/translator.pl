@@ -15,7 +15,7 @@ arg_to_list([superpose|T], T) :- !.
 arg_to_list(A, [A]).
 
 % Runtime dispatcher: call F if it's a registered fun/1, else keep as list:
-maybe_call(F, Args, Out) :- ( nonvar(F), atom(F), fun(F) -> append(Args, [Out], CallArgs),
+reduce(F, Args, Out) :- ( nonvar(F), atom(F), fun(F) -> append(Args, [Out], CallArgs),
                                                             Goal =.. [F|CallArgs],
                                                             call(Goal)
                                                           ; Out = [F|Args] ).
@@ -72,11 +72,11 @@ translate_expr([H|T], Goals, Out) :-
                ( atom(DynHead), fun(DynHead) -> append(Args0, [V], ArgsV),
                                                 Goal =.. [DynHead|ArgsV],
                                                 append(A2, [Goal], Goals)
-                                              ; append(A2, [maybe_call(DynHead, Args0, V)], Goals) )
-          ; is_list(HV) -> eval_data_term(HV, Gd, HV1),          %Plain data list: evaluate inner fun-sublists
+                                              ; append(A2, [reduce(DynHead, Args0, V)], Goals) )
+          ; is_list(HV) -> eval_data_term(HV, Gd, HV1),      %Plain data list: evaluate inner fun-sublists
                            append(Inner, Gd, Goals),
                            Out = [HV1|AVs]
-          ; append(Inner, [maybe_call(HV, AVs, Out)], Goals) )). %Unknown head (var/compound) => runtime dispatch
+          ; append(Inner, [reduce(HV, AVs, Out)], Goals) )). %Unknown head (var/compound) => runtime dispatch
 
 %Handle data list:
 eval_data_term(X, [], X) :- (var(X); atomic(X)), !.
