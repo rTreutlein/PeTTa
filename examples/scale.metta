@@ -2,7 +2,8 @@
 (= (addK $K)
    (if (== $K 0)
        done
-       (let* (($t (add-atom &self (r $K (% $K 10)))))
+       (let* (($K10 (% $K 10))
+              ($t (add-atom &self (r $K $K10))))
               (addK (- $K 1)))))
 
 ; --- query patterns to exercise different indexes

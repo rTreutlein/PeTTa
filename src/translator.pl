@@ -54,29 +54,25 @@ translate_expr([H|T], Goals, Out) :-
                                              Goals = [Goal | Inner]
         ; HV == cut, T = [] -> append(GsH, [(!)], Goals),
                                Out = true
+        ; ( HV == 'add-atom' ; HV == 'remove-atom' ) -> Out = V,
+                                                        append(T, [V], RawArgs),
+                                                        Goal =.. [HV|RawArgs],
+                                                        append(GsH, [Goal], Goals)
         ; translate_args(T, GsT, AVs),
           append(GsH, GsT, Inner),
-          ( atom(HV), fun(HV) -> Out = V,                        %Known function => direct call
+          ( atom(HV), fun(HV) -> Out = V,                          %Known function => direct call
                                  append(AVs, [V], ArgsV),
                                  Goal =.. [HV|ArgsV],
                                  append(Inner, [Goal], Goals)
-          ; atomic(HV), \+ atom(HV) -> Out = [HV|AVs],           %Literals (numbers, strings, etc.) => data, no dispatcher
-                                       Goals = Inner
-          ; atom(HV), \+ fun(HV) -> Out = [HV|AVs],              %Known non-function atom => data
-                                    Goals = Inner
-          ; is_list(HV), HV = [Hdr|Rest], is_list(Hdr), Hdr = [Fh|_], atom(Fh), fun(Fh)
-            -> translate_expr(Hdr, Gh, DynHead),                 %First element is a sublist whose head is a known fun
-               eval_data_list(Rest, Gr, Rest1),
-               append(Inner, Gh, A1), append(A1, Gr, A2),
-               Out = V, append(Rest1, AVs, Args0),
-               ( atom(DynHead), fun(DynHead) -> append(Args0, [V], ArgsV),
-                                                Goal =.. [DynHead|ArgsV],
-                                                append(A2, [Goal], Goals)
-                                              ; append(A2, [reduce(DynHead, Args0, V)], Goals) )
-          ; is_list(HV) -> eval_data_term(HV, Gd, HV1),      %Plain data list: evaluate inner fun-sublists
+          ; ( number(HV) ; string(HV) ; HV == true ; HV == false ) %Value head, process all tail args
+              -> translate_args(AVs, GsTail, AVs1),
+                 append(Inner, GsTail, Inner1),
+                 Out = [HV|AVs1],
+                 Goals = Inner1
+          ; is_list(HV) -> eval_data_term(HV, Gd, HV1),            %Plain data list: evaluate inner fun-sublists
                            append(Inner, Gd, Goals),
                            Out = [HV1|AVs]
-          ; append(Inner, [reduce(HV, AVs, Out)], Goals) )). %Unknown head (var/compound) => runtime dispatch
+          ; append(Inner, [reduce(HV, AVs, Out)], Goals) )).       %Unknown head (var/compound) => runtime dispatchq
 
 %Handle data list:
 eval_data_term(X, [], X) :- (var(X); atomic(X)), !.

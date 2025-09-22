@@ -52,11 +52,21 @@ test(A,B,R) :- (A == B -> E = '✅' ; E = '❌'),
 ensure_dynamic_arity(Space,Arity) :- ( current_predicate(Space/Arity)
                                        -> true ; dynamic(Space/Arity) ).
 
+%Add a function atom:
+'add-atom'('&self', Term, true) :- Term = [=,[FAtom|_],_],
+                                   register_fun(FAtom),
+                                   translate_clause(Term, Clause),
+                                   assertz(Clause), !.
+
 %Add an atom to the space:
 'add-atom'(Space, [Rel|Args], true) :- length(Args, N), Arity is N + 2,
                                        ensure_dynamic_arity(Space, Arity),
                                        Term =.. [Space, Rel | Args],
                                        assertz(Term).
+
+%%Remove a function atom:
+'remove-atom'('&self', Term, true) :- Term = [=,[FAtom|_],_],
+                                      unregister_fun(FAtom).
 
 %Remove all same atoms:
 'remove-atom'(Space, [Rel|Args], true) :- length(Args, N), Arity is N + 2,
@@ -81,7 +91,6 @@ match(Space, [Rel|PatArgs], OutPattern, Result) :- Term =.. [Space, Rel | PatArg
                                clause(Head, true),
                                Head =.. [Space | Pattern].
 
-
 %%% Python bindings: %%%
 'py-call'(SpecList, Result) :- 'py-call'(SpecList, Result, []).
 'py-call'([Spec|Args], Result, Opts) :- ( string(Spec) -> atom_string(A, Spec) ; A = Spec ),
@@ -102,7 +111,6 @@ match(Space, [Rel|PatArgs], OutPattern, Result) :- Term =.. [Space, Rel | PatArg
                                                   -> compound_name_arguments(Call0, A, [])
                                                    ; Call0 =.. [A|Args] ),
                                                 py_call(builtins:Call0, Result, Opts) ).
-
 
 %%% Type system: %%%
 
@@ -135,8 +143,9 @@ get_function_type([F,Arg], T) :- match('&self', [':',F,['->',A,B]], _, _),
 
 %%% Registration: %%%
 :- dynamic fun/1.
-register_fun(N)   :- (fun(N)->true ; assertz(fun(N))).
-unregister_fun(N) :- retractall(fun(N)).
+register_fun(N) :- (fun(N)->true ; assertz(fun(N))).
+unregister_fun(N/Arity) :- retractall(fun(N)), abolish(N, Arity).
+
 :- maplist(register_fun, [superpose, empty, let, 'let*', '+','-','*','/', '%', min, max,
                           '<','>','==', '=', '<=', '>=', and, or, not, 'car-atom', 'cdr-atom', 'trace!', test,
                           append, length, sort, msort, memberfast, excludefast, list_to_set,
