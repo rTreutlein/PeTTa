@@ -16,9 +16,9 @@ arg_to_list(A, [A]).
 
 % Runtime dispatcher: call F if it's a registered fun/1, else keep as list:
 reduce(F, Args, Out) :- ( nonvar(F), atom(F), fun(F) -> append(Args, [Out], CallArgs),
-                                                            Goal =.. [F|CallArgs],
-                                                            call(Goal)
-                                                          ; Out = [F|Args] ).
+                                                        Goal =.. [F|CallArgs],
+                                                        call(Goal)
+                                                      ; Out = [F|Args] ).
 
 %Turn MeTTa code S-expression into goals list:
 translate_expr(X, [], X)          :- (var(X) ; atomic(X)), !.
@@ -72,7 +72,7 @@ translate_expr([H|T], Goals, Out) :-
           ; is_list(HV) -> eval_data_term(HV, Gd, HV1),            %Plain data list: evaluate inner fun-sublists
                            append(Inner, Gd, Goals),
                            Out = [HV1|AVs]
-          ; append(Inner, [reduce(HV, AVs, Out)], Goals) )).       %Unknown head (var/compound) => runtime dispatchq
+          ; append(Inner, [reduce(HV, AVs, Out)], Goals) )).       %Unknown head (var/compound) => runtime dispatch
 
 %Handle data list:
 eval_data_term(X, [], X) :- (var(X); atomic(X)), !.
