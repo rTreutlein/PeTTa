@@ -37,6 +37,7 @@ empty(_) :- fail.
 %%% Lists / Tuples: %%%
 'car-atom'([H|_], H).
 'cdr-atom'([_|T], T).
+'decons'([H|T], [H|[T]]).
 memberfast(X, List, true) :- memberchk(X, List), !.
 memberfast(_, _, false).
 excludefast(A, L, R) :- exclude(==(A), L, R).
@@ -91,6 +92,48 @@ test(A,B,R) :- (A == B -> E = '✅' ; E = '❌'),
                                                 py_call(builtins:Call0, Result, Opts) ).
 
 %%% Registration: %%%
+%Types
+'is-var'(A,R) :- (var(A) -> R=true ; R=false).
+'is-expr'(A,R) :- (is_list(A) -> R=true ; R=false).
+'get-mettatype'(A,R) :- (var(A) -> R='variable' ; (atom(A) -> R='atom' ; R='expression')).
+
+fold([], Acc, _Combiner, Acc).
+
+fold(A, Acc, Combiner, Result) :-
+    atom(A),
+    call(Combiner, Acc, A, Result).
+
+% Recursive case: process head and recurse on tail
+fold([Head|Tail], Acc, Combiner, Result) :-
+    \+is_list(Head),
+    call(Combiner, Acc, Head, NewAcc),  % Apply Combiner(Acc, Head, NewAcc)
+    fold(Tail, NewAcc, Combiner, Result).
+
+fold([Head|Tail], Acc, Combiner, Result) :-
+    is_list(Head),
+    fold(Head, Acc, Combiner, NewAcc),
+    fold(Tail, NewAcc, Combiner, Result).
+
+member_strict(X, [Y|_]) :- X == Y.
+member_strict(X, [_|T]) :- member_strict(X, T).
+
+union([],[],[]).
+union(List1,[],List1).
+union(List1, [Head2|Tail2], [Head2|Output]):-
+    \+(member_strict(Head2,List1)), union(List1,Tail2,Output).
+union(List1, [Head2|Tail2], Output):-
+    member_strict(Head2,List1), union(List1,Tail2,Output).  
+
+subtract([], _, R) =>
+    R = [].
+subtract([E|T], D, R) =>
+    (   member_strict(E, D)
+    ->  subtract(T, D, R)
+    ;   R = [E|R1],
+        subtract(T, D, R1)
+    ).
+
+%Registration:
 :- dynamic fun/1.
 register_fun(N) :- (fun(N) -> true ; assertz(fun(N))).
 unregister_fun(N/Arity) :- retractall(fun(N)),
@@ -99,5 +142,5 @@ unregister_fun(N/Arity) :- retractall(fun(N)),
 :- maplist(register_fun, [superpose, empty, let, 'let*', '+','-','*','/', '%', min, max,
                           '<','>','==', '=', '<=', '>=', and, or, not, 'car-atom', 'cdr-atom', 'trace!', test,
                           append, length, sort, msort, memberfast, excludefast, list_to_set,
-                          'add-atom', 'remove-atom', 'get-atoms', 'match', 'match-once',
-                          'py-call', 'get-type', 'get-metatype']).
+                          'add-atom', 'remove-atom', 'get-atoms', 'match', 'match-once', 'is-var', 'is-expr', 'get-mettatype',
+                          'decons', 'fold', 'union', 'subtract', 'unify', 'py-call', 'get-type', 'get-metatype']).
