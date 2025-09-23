@@ -1,4 +1,4 @@
-:- ensure_loaded([parser, translator, filereader]).
+:- ensure_loaded([parser, translator, filereader, spaces]).
 
 %%%%%%%%%% Standard Library for MeTTa %%%%%%%%%%
 
@@ -45,51 +45,6 @@ excludefast(A, L, R) :- exclude(==(A), L, R).
 'trace!'(In, Content, Out) :- format('~w~n', [In]), Out = Content.
 test(A,B,R) :- (A == B -> E = '✅' ; E = '❌'),
                format(string(R), "is ~w, should ~w. ~w ~n", [A, B, E]).
-
-%%% Spaces: %%%
-
-%Arity expander for JIT-indexing-efficient representation of space entries:
-ensure_dynamic_arity(Space,Arity) :- ( current_predicate(Space/Arity)
-                                       -> true ; dynamic(Space/Arity) ).
-
-%Add a function atom:
-'add-atom'('&self', Term, true) :- Term = [=,[FAtom|_],_],
-                                   register_fun(FAtom),
-                                   translate_clause(Term, Clause),
-                                   assertz(Clause), !.
-
-%Add an atom to the space:
-'add-atom'(Space, [Rel|Args], true) :- length(Args, N), Arity is N + 2,
-                                       ensure_dynamic_arity(Space, Arity),
-                                       Term =.. [Space, Rel | Args],
-                                       assertz(Term).
-
-%%Remove a function atom:
-'remove-atom'('&self', Term, true) :- Term = [=,[FAtom|_],_],
-                                      unregister_fun(FAtom).
-
-%Remove all same atoms:
-'remove-atom'(Space, [Rel|Args], true) :- length(Args, N), Arity is N + 2,
-                                          ensure_dynamic_arity(Space, Arity),
-                                          Term =.. [Space, Rel | Args],
-                                          ( clause(Term, true)
-                                            -> retractall(Term) ).
-
-%Match only a single instance, existential check:
-'match-once'(Space, Pattern, OutPattern, Result) :- once(match(Space, Pattern, OutPattern, Result)).
-
-%Function evaluation matches, where the unification returned true, so it unified:
-match('&self', true, Arg2, Result) :- Result = Arg2.
-
-%Match for pattern:
-match(Space, [Rel|PatArgs], OutPattern, Result) :- Term =.. [Space, Rel | PatArgs],
-                                                   Term, Result = OutPattern.
-
-%Get all atoms in space, irregard of arity:
-'get-atoms'(Space, Pattern) :- current_predicate(Space/Arity),
-                               functor(Head, Space, Arity),
-                               clause(Head, true),
-                               Head =.. [Space | Pattern].
 
 %%% Python bindings: %%%
 'py-call'(SpecList, Result) :- 'py-call'(SpecList, Result, []).
