@@ -68,13 +68,9 @@ test(A,B,R) :- (A == B -> E = '✅' ; E = '❌'),
                                                 py_call(builtins:Call0, Result, Opts) ).
 
 %%% Type system: %%%
-
-%Query for the type definitions of functions
 get_function_type([F,Arg], T) :- match('&self', [':',F,['->',A,B]], _, _),
                                  'get-type'(Arg, A),
                                  T = B.
-
-%Type resolution:
 'get-type'(X, 'Number')   :- number(X), !.
 'get-type'(X, 'Variable') :- var(X), !.
 'get-type'(X, 'String')   :- string(X), !.
@@ -85,8 +81,6 @@ get_function_type([F,Arg], T) :- match('&self', [':',F,['->',A,B]], _, _),
                     is_list(X),
                     maplist('get-type', X, T).
 'get-type'(X, T) :- match('&self', [':',X,T], T, _).
-
-%Meta-types:
 'get-metatype'(X, 'Variable') :- var(X), !.
 'get-metatype'(X, 'Grounded') :- number(X), !.
 'get-metatype'(X, 'Grounded') :- string(X), !.
