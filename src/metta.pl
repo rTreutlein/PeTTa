@@ -16,7 +16,7 @@ let(V, Val, In, Out) :- 'let*'([[V,Val]], In, Out).
 '<'(A,B,R)  :- (A<B -> R=true ; R=false).
 '>'(A,B,R)  :- (A>B -> R=true ; R=false).
 '=='(A,B,R) :- (A==B -> R=true ; R=false).
-'='(A,B,R) :- (A=B -> R=true ; R=false).
+'='(A,B,R) :-  (A=B -> R=true ; R=false).
 '<='(A,B,R) :- (A =< B -> R=true ; R=false).
 '>='(A,B,R) :- (A => B -> R=true ; R=false).
 min(A,B,R)  :- R is min(A,B).
