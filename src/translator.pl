@@ -65,10 +65,10 @@ translate_expr([H|T], Goals, Out) :-
                                  Goal =.. [HV|ArgsV],
                                  append(Inner, [Goal], Goals)
           ; ( number(HV) ; string(HV) ; HV == true ; HV == false ) %Value head, process all tail args
-              -> translate_args(AVs, GsTail, AVs1),
-                 append(Inner, GsTail, Inner1),
-                 Out = [HV|AVs1],
-                 Goals = Inner1
+            -> translate_args(AVs, GsTail, AVs1),
+               append(Inner, GsTail, Inner1),
+               Out = [HV|AVs1],
+               Goals = Inner1
           ; is_list(HV) -> eval_data_term(HV, Gd, HV1),            %Plain data list: evaluate inner fun-sublists
                            append(Inner, Gd, Goals),
                            Out = [HV1|AVs]
