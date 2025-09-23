@@ -1,5 +1,3 @@
-%%% Spaces: %%%
-
 %Arity expander for JIT-indexing-efficient representation of space entries:
 ensure_dynamic_arity(Space,Arity) :- ( current_predicate(Space/Arity)
                                        -> true ; dynamic(Space/Arity) ).
