@@ -41,6 +41,29 @@ memberfast(X, List, true) :- memberchk(X, List), !.
 memberfast(_, _, false).
 excludefast(A, L, R) :- exclude(==(A), L, R).
 
+%%% Type system: %%%
+get_function_type([F,Arg], T) :- match('&self', [':',F,['->',A,B]], _, _),
+                                 'get-type'(Arg, A),
+                                 T = B.
+'get-type'(X, 'Number')   :- number(X), !.
+'get-type'(X, 'Variable') :- var(X), !.
+'get-type'(X, 'String')   :- string(X), !.
+'get-type'(true, 'Bool')  :- !.
+'get-type'(false, 'Bool') :- !.
+'get-type'(X, T) :- get_function_type(X,T).
+'get-type'(X, T) :- \+ get_function_type(X, _),
+                    is_list(X),
+                    maplist('get-type', X, T).
+'get-type'(X, T) :- match('&self', [':',X,T], T, _).
+'get-metatype'(X, 'Variable') :- var(X), !.
+'get-metatype'(X, 'Grounded') :- number(X), !.
+'get-metatype'(X, 'Grounded') :- string(X), !.
+'get-metatype'(true,  'Grounded') :- !.
+'get-metatype'(false, 'Grounded') :- !.
+'get-metatype'(X, 'Grounded') :- atom(X), fun(X), !.  % e.g., '+' is a registered fun/1
+'get-metatype'(X, 'Expression') :- is_list(X), !.     % e.g., (+ 1 2), (a b)
+'get-metatype'(X, 'Symbol') :- atom(X), !.            % e.g., a
+
 %%% Diagnostics / Testing: %%%
 'trace!'(In, Content, Out) :- format('~w~n', [In]), Out = Content.
 test(A,B,R) :- (A == B -> E = '✅' ; E = '❌'),
@@ -66,29 +89,6 @@ test(A,B,R) :- (A == B -> E = '✅' ; E = '❌'),
                                                   -> compound_name_arguments(Call0, A, [])
                                                    ; Call0 =.. [A|Args] ),
                                                 py_call(builtins:Call0, Result, Opts) ).
-
-%%% Type system: %%%
-get_function_type([F,Arg], T) :- match('&self', [':',F,['->',A,B]], _, _),
-                                 'get-type'(Arg, A),
-                                 T = B.
-'get-type'(X, 'Number')   :- number(X), !.
-'get-type'(X, 'Variable') :- var(X), !.
-'get-type'(X, 'String')   :- string(X), !.
-'get-type'(true, 'Bool')  :- !.
-'get-type'(false, 'Bool') :- !.
-'get-type'(X, T) :- get_function_type(X,T).
-'get-type'(X, T) :- \+ get_function_type(X, _),
-                    is_list(X),
-                    maplist('get-type', X, T).
-'get-type'(X, T) :- match('&self', [':',X,T], T, _).
-'get-metatype'(X, 'Variable') :- var(X), !.
-'get-metatype'(X, 'Grounded') :- number(X), !.
-'get-metatype'(X, 'Grounded') :- string(X), !.
-'get-metatype'(true,  'Grounded') :- !.
-'get-metatype'(false, 'Grounded') :- !.
-'get-metatype'(X, 'Grounded') :- atom(X), fun(X), !.  % e.g., '+' is a registered fun/1
-'get-metatype'(X, 'Expression') :- is_list(X), !.     % e.g., (+ 1 2), (a b)
-'get-metatype'(X, 'Symbol') :- atom(X), !.            % e.g., a
 
 %%% Registration: %%%
 :- dynamic fun/1.
