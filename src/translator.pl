@@ -1,9 +1,10 @@
 %Flatten (= Head Body) MeTTa function into Prolog Clause:
-translate_clause(Input, (Head :- (BodyConj, Out=OutBody))) :- Input = [=, [F|Args0], BodyExpr],
-                                                              append(Args0, [Out], Args),
-                                                              compound_name_arguments(Head, F, Args),
-                                                              translate_expr(BodyExpr, GoalsB, OutBody),
-                                                              goals_list_to_conj(GoalsB, BodyConj).
+translate_clause(Input, (Head :- BodyConj)) :- Input = [=, [F|Args0], BodyExpr],
+                                               append(Args0, [Out], Args),
+                                               compound_name_arguments(Head, F, Args),
+                                               translate_expr(BodyExpr, GoalsB, OutBody),
+                                               BodyGoals = [ (Out = OutBody) | GoalsB ],
+                                               goals_list_to_conj(BodyGoals, BodyConj).
 
 %Conjunction builder, turning goals list to a flat conjunction:
 goals_list_to_conj([], true)      :- !.
@@ -33,8 +34,8 @@ translate_expr([H|T], Goals, Out) :-
         ; HV == if, T = [C, T1, E1] -> translate_expr(C, Gc, Cv),  goals_list_to_conj(Gc, ConC),
                                        translate_expr(T1, Gt, Tv), goals_list_to_conj(Gt, ConT),
                                        translate_expr(E1, Ge, Ev), goals_list_to_conj(Ge, ConE),
-                                       ( ConT == true -> BT = (Out = Tv) ; BT = (ConT, Out = Tv) ),
-                                       ( ConE == true -> BE = (Out = Ev) ; BE = (ConE, Out = Ev) ),
+                                       ( ConT == true -> BT = (Out = Tv) ; BT = (Out = Tv, ConT) ),
+                                       ( ConE == true -> BE = (Out = Ev) ; BE = (Out = Ev, ConE) ),
                                        ( ConC == true -> append(GsH, [ (Cv == true -> BT ; BE) ], Goals)
                                                        ; append(GsH, [ (ConC, (Cv == true -> BT ; BE)) ], Goals) )
         ; HV == case, T = [KeyExpr, PairsExpr] -> translate_expr(KeyExpr, Gk, Kv),
@@ -104,7 +105,7 @@ translate_case([[K,VExpr]|Rs], Kv, Out, Goal) :- translate_expr(VExpr, Gv, VOut)
                                                  goals_list_to_conj(Gv, ConV),
                                                  Test = (Kv = K),
                                                  ( (ConV == true -> Then = (Out = VOut)
-                                                                  ; Then = (ConV, Out = VOut)),
+                                                                  ; Then = (Out = VOut, ConV)),
                                                    (Rs == []     -> Goal = (Test -> Then)
                                                                   ; translate_case(Rs, Kv, Out, Next),
                                                                     Goal = (Test -> Then ; Next))).
@@ -124,5 +125,5 @@ build_superpose_branches([], _, []).
 build_superpose_branches([E|Es], Out, [B|Bs]) :- translate_expr(E, Gs, Val),
                                                  goals_list_to_conj(Gs, Conj),
                                                  ( Conj == true -> B = (Out = Val)
-                                                                 ; B = (Conj, Out = Val) ),
+                                                                 ; B = (Out = Val, Conj) ),
                                                  build_superpose_branches(Es, Out, Bs).
