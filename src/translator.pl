@@ -44,7 +44,7 @@ translate_expr([H|T], Goals, Out) :-
         ; HV == unify , T = [Pat1, Pat2, Suc, Fail] -> translate_expr(Pat1, Gp1, P1),
                                                        translate_expr(Pat2, Gp2, P2),
                                                        translate_expr(Suc,  Gs, S),goals_list_to_conj(Gs, ConS),
-                                                       translate_expr(Fail, Gf, F),goals_list_to_conj(GF, ConF),
+                                                       translate_expr(Fail, Gf, F),goals_list_to_conj(Gf, ConF),
                                                        Goal = ( P1 = P2 -> (ConS, Out=S) ; (ConF, Out=F)),
                                                        append(GsH, Gp1, A), append(A, Gp2, B), append(B, [Goal], Goals)
         ; HV == let, T = [Pat, Val, In] -> translate_expr(Pat, Gp, P),

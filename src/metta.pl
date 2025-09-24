@@ -105,11 +105,15 @@ fold(A, Acc, Combiner, Result) :-
 
 % Recursive case: process head and recurse on tail
 fold([Head|Tail], Acc, Combiner, Result) :-
+    call(Combiner, Acc, Head, NewAcc),  % Apply Combiner(Acc, Head, NewAcc)
+    fold(Tail, NewAcc, Combiner, Result).
+
+foldexp([Head|Tail], Acc, Combiner, Result) :-
     \+is_list(Head),
     call(Combiner, Acc, Head, NewAcc),  % Apply Combiner(Acc, Head, NewAcc)
     fold(Tail, NewAcc, Combiner, Result).
 
-fold([Head|Tail], Acc, Combiner, Result) :-
+foldexp([Head|Tail], Acc, Combiner, Result) :-
     is_list(Head),
     fold(Head, Acc, Combiner, NewAcc),
     fold(Tail, NewAcc, Combiner, Result).
@@ -143,4 +147,4 @@ unregister_fun(N/Arity) :- retractall(fun(N)),
                           '<','>','==', '=', '<=', '>=', and, or, not, 'car-atom', 'cdr-atom', 'trace!', test,
                           append, length, sort, msort, memberfast, excludefast, list_to_set,
                           'add-atom', 'remove-atom', 'get-atoms', 'match', 'match-once', 'is-var', 'is-expr', 'get-mettatype',
-                          'decons', 'fold', 'union', 'subtract', 'unify', 'py-call', 'get-type', 'get-metatype']).
+                          'decons', 'fold', 'foldexp', 'union', 'subtract', 'unify', 'py-call', 'get-type', 'get-metatype']).
