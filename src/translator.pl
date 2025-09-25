@@ -2,9 +2,8 @@
 translate_clause(Input, (Head :- BodyConj)) :- Input = [=, [F|Args0], BodyExpr],
                                                append(Args0, [Out], Args),
                                                compound_name_arguments(Head, F, Args),
-                                               translate_expr(BodyExpr, GoalsB, OutBody),
-                                               BodyGoals = [ (Out = OutBody) | GoalsB ],
-                                               goals_list_to_conj(BodyGoals, BodyConj).
+                                               translate_expr(BodyExpr, GoalsB, Out),
+                                               goals_list_to_conj(GoalsB, BodyConj).
 
 %Conjunction builder, turning goals list to a flat conjunction:
 goals_list_to_conj([], true)      :- !.
@@ -55,14 +54,12 @@ translate_expr([H|T], Goals, Out) :-
                                              Goals = [Goal | Inner]
         ; HV == cut, T = [] -> append(GsH, [(!)], Goals),
                                Out = true
-        ; ( HV == 'add-atom' ; HV == 'remove-atom' ) -> Out = V,
-                                                        append(T, [V], RawArgs),
+        ; ( HV == 'add-atom' ; HV == 'remove-atom' ) -> append(T, [Out], RawArgs),
                                                         Goal =.. [HV|RawArgs],
                                                         append(GsH, [Goal], Goals)
         ; translate_args(T, GsT, AVs),
           append(GsH, GsT, Inner),
-          ( atom(HV), fun(HV) -> Out = V,                          %Known function => direct call
-                                 append(AVs, [V], ArgsV),
+          ( atom(HV), fun(HV) -> append(AVs, [Out], ArgsV),        %Known function => direct call
                                  Goal =.. [HV|ArgsV],
                                  append(Inner, [Goal], Goals)
           ; ( number(HV) ; string(HV) ; HV == true ; HV == false ) %Value head, process all tail args
