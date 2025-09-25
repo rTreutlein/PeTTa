@@ -134,29 +134,51 @@ test(A,B,R) :- (A == B -> E = '✅' ; E = '❌'),
                                                    ; Call0 =.. [A|Args] ),
                                                 py_call(builtins:Call0, Result, Opts) ).
 
-%%% Hihger-order predicates: %%%
+%%% Higher-order predicates: %%%
 
-fold([], Acc, _Combiner, Acc).
+fold_flat([], Acc, _Combiner, Acc).
 
-fold([Head|Tail], Acc, Combiner, Result) :-
+fold_flat([Head|Tail], Acc, Combiner, Result) :-
     call(Combiner, Acc, Head, NewAcc),  % Apply Combiner(Acc, Head, NewAcc)
-    fold(Tail, NewAcc, Combiner, Result).
+    fold_flat(Tail, NewAcc, Combiner, Result).
 
-foldexp([], Acc, _Combiner, Acc). 
+fold_nested([], Acc, _Combiner, Acc). 
 
-foldexp(A, Acc, Combiner, Result) :-
+fold_nested(A, Acc, Combiner, Result) :-
     atom(A),
     call(Combiner, Acc, A, Result).
 
-foldexp([Head|Tail], Acc, Combiner, Result) :-
+fold_nested([Head|Tail], Acc, Combiner, Result) :-
     \+is_list(Head),
     call(Combiner, Acc, Head, NewAcc),  % Apply Combiner(Acc, Head, NewAcc)
-    foldexp(Tail, NewAcc, Combiner, Result).
+    fold_nested(Tail, NewAcc, Combiner, Result).
 
-foldexp([Head|Tail], Acc, Combiner, Result) :-
+fold_nested([Head|Tail], Acc, Combiner, Result) :-
     is_list(Head),
-    foldexp(Head, Acc, Combiner, NewAcc),
-    foldexp(Tail, NewAcc, Combiner, Result).
+    fold_nested(Head, Acc, Combiner, NewAcc),
+    fold_nested(Tail, NewAcc, Combiner, Result).
+
+map_flat([], _Mapper, []).
+
+map_flat([Head|Tail], Mapper, [NewHead|NewTail]) :-
+    call(Mapper, Head, NewHead),
+    map_flat(Tail, Mapper, NewTail).
+
+map_nested(Atom, Mapper, Result) :-
+    atom(Atom),
+    call(Mapper, Atom, Result).
+
+map_nested([], _Mapper, []).
+
+map_nested([Head|Tail], Mapper, [NewHead|NewTail]) :-
+    is_list(Head),
+    map_nested(Head, Mapper, NewHead),
+    map_nested(Tail, Mapper, NewTail).
+
+map_nested([Head|Tail], Mapper, [NewHead|NewTail]) :-
+    \+is_list(Head),
+    call(Mapper, Head, NewHead),
+    map_nested(Tail, Mapper, NewTail).
 
 %Registration:
 :- dynamic fun/1.
@@ -168,5 +190,5 @@ unregister_fun(N/Arity) :- retractall(fun(N)),
                           '<','>','==', '=', '<=', '>=', and, or, not, 'car-atom', 'cdr-atom', 'trace!', test,
                           append, length, sort, msort, memberfast, excludefast, list_to_set, maplist,
                           'add-atom', 'remove-atom', 'get-atoms', 'match', 'match-once', 'is-var', 'is-expr', 'get-mettatype',
-                          'decons', 'fold', 'foldexp', 'union', 'intersection', 'subtract', 'unify', 'py-call', 'get-type', 'get-metatype',
+                          'decons', 'fold_flat', 'fold_nested', 'map_flat', 'map_nested', 'union', 'intersection', 'subtract', 'unify', 'py-call', 'get-type', 'get-metatype',
                           '=alpha','=@=']).
