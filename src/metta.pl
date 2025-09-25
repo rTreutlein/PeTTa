@@ -20,7 +20,7 @@ let(V, Val, In, Out) :- 'let*'([[V,Val]], In, Out).
 '=alpha'(A,B,R) :- (A =@= B -> R=true ; R=false).
 '=@='(A,B,R) :- (A =@= B -> R=true ; R=false).
 '<='(A,B,R) :- (A =< B -> R=true ; R=false).
-'>='(A,B,R) :- (A => B -> R=true ; R=false).
+'>='(A,B,R) :- (A >= B -> R=true ; R=false).
 min(A,B,R)  :- R is min(A,B).
 max(A,B,R)  :- R is max(A,B).
 
@@ -116,9 +116,8 @@ intersection(Pred, [Head1|Tail1], List2, Output) :-
     intersection(Pred, Tail1, List2, Output).
 
 %List based Subtraction
-subtract(_Pred, [], _, R) =>
-    R = [].
-subtract(Pred, [E|T], D, R) =>
+subtract(_Pred, [], _, []).
+subtract(Pred, [E|T], D, R) :-
     (   member_with_pred(E, D, Pred)
     ->  subtract(Pred, T, D, R)
     ;   R = [E|R1],
