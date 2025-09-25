@@ -24,6 +24,8 @@ let(V, Val, In, Out) :- 'let*'([[V,Val]], In, Out).
 min(A,B,R)  :- R is min(A,B).
 max(A,B,R)  :- R is max(A,B).
 
+exp(Arg,R) :- R is exp(Arg).
+
 %%% Boolean Logic: %%%
 and(true,  X, X).
 and(false, _, false).
@@ -206,7 +208,8 @@ unregister_fun(N/Arity) :- retractall(fun(N)),
                            abolish(N, Arity).
 
 :- maplist(register_fun, [superpose, empty, let, 'let*', '+','-','*','/', '%', min, max,
-                          '<','>','==', '=', '<=', '>=', and, or, not, 'car-atom', 'cdr-atom', 'println!', 'trace!', test,
+                          '<','>','==', '=', '<=', '>=', and, or, not, sqrt, exp, log, cos, sin,
+                          'car-atom', 'cdr-atom', 'println!', 'trace!', test,
                           append, length, sort, msort, memberfast, excludefast, list_to_set, maplist,
                           'add-atom', 'remove-atom', 'get-atoms', 'match', 'match-once', 'is-var', 'is-expr', 'get-mettatype',
                           'decons', 'fold-flat', 'fold-nested', 'map-flat', 'map-nested', 'union', 'intersection', 'subtract',
