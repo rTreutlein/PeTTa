@@ -67,57 +67,9 @@ get_function_type([F,Arg], T) :- match('&self', [':',F,['->',A,B]], _, _),
 'get-metatype'(X, 'Expression') :- is_list(X), !.     % e.g., (+ 1 2), (a b)
 'get-metatype'(X, 'Symbol') :- atom(X), !.            % e.g., a
 
-%%% Diagnostics / Testing: %%%
-'trace!'(In, Content, Out) :- format('~w~n', [In]), Out = Content.
-test(A,B,R) :- (A == B -> E = '✅' ; E = '❌'),
-               format(string(R), "is ~w, should ~w. ~w ~n", [A, B, E]).
-
-%%% Python bindings: %%%
-'py-call'(SpecList, Result) :- 'py-call'(SpecList, Result, []).
-'py-call'([Spec|Args], Result, Opts) :- ( string(Spec) -> atom_string(A, Spec) ; A = Spec ),
-                                        must_be(atom, A),
-                                        ( sub_atom(A, 0, 1, _, '.')         % ".method"
-                                          -> sub_atom(A, 1, _, 0, Fun),
-                                             Args = [Obj|Rest],
-                                             ( Rest == []
-                                               -> compound_name_arguments(Meth, Fun, [])
-                                                ; Meth =.. [Fun|Rest] ),
-                                             py_call(Obj:Meth, Result, Opts)
-                                           ; atomic_list_concat([M,F], '.', A) % "mod.fun"
-                                             -> ( Args == []
-                                                  -> compound_name_arguments(Call0, F, [])
-                                                   ; Call0 =.. [F|Args] ),
-                                                py_call(M:Call0, Result, Opts)
-                                              ; ( Args == []                      % bare "fun"
-                                                  -> compound_name_arguments(Call0, A, [])
-                                                   ; Call0 =.. [A|Args] ),
-                                                py_call(builtins:Call0, Result, Opts) ).
-
-%%% Registration: %%%
-%Types
+%Commonly used predicates:
 'is-var'(A,R) :- (var(A) -> R=true ; R=false).
 'is-expr'(A,R) :- (is_list(A) -> R=true ; R=false).
-
-fold([], Acc, _Combiner, Acc).
-
-fold(A, Acc, Combiner, Result) :-
-    atom(A),
-    call(Combiner, Acc, A, Result).
-
-% Recursive case: process head and recurse on tail
-fold([Head|Tail], Acc, Combiner, Result) :-
-    call(Combiner, Acc, Head, NewAcc),  % Apply Combiner(Acc, Head, NewAcc)
-    fold(Tail, NewAcc, Combiner, Result).
-
-foldexp([Head|Tail], Acc, Combiner, Result) :-
-    \+is_list(Head),
-    call(Combiner, Acc, Head, NewAcc),  % Apply Combiner(Acc, Head, NewAcc)
-    fold(Tail, NewAcc, Combiner, Result).
-
-foldexp([Head|Tail], Acc, Combiner, Result) :-
-    is_list(Head),
-    fold(Head, Acc, Combiner, NewAcc),
-    fold(Tail, NewAcc, Combiner, Result).
 
 member_strict(X, [Y|_]) :- X == Y.
 member_strict(X, [_|T]) :- member_strict(X, T).
@@ -154,6 +106,55 @@ subtract([E|T], D, R) =>
 
 
 
+%%% Diagnostics / Testing: %%%
+'trace!'(In, Content, Out) :- format('~w~n', [In]), Out = Content.
+test(A,B,R) :- (A == B -> E = '✅' ; E = '❌'),
+               format(string(R), "is ~w, should ~w. ~w ~n", [A, B, E]).
+
+%%% Python bindings: %%%
+'py-call'(SpecList, Result) :- 'py-call'(SpecList, Result, []).
+'py-call'([Spec|Args], Result, Opts) :- ( string(Spec) -> atom_string(A, Spec) ; A = Spec ),
+                                        must_be(atom, A),
+                                        ( sub_atom(A, 0, 1, _, '.')         % ".method"
+                                          -> sub_atom(A, 1, _, 0, Fun),
+                                             Args = [Obj|Rest],
+                                             ( Rest == []
+                                               -> compound_name_arguments(Meth, Fun, [])
+                                                ; Meth =.. [Fun|Rest] ),
+                                             py_call(Obj:Meth, Result, Opts)
+                                           ; atomic_list_concat([M,F], '.', A) % "mod.fun"
+                                             -> ( Args == []
+                                                  -> compound_name_arguments(Call0, F, [])
+                                                   ; Call0 =.. [F|Args] ),
+                                                py_call(M:Call0, Result, Opts)
+                                              ; ( Args == []                      % bare "fun"
+                                                  -> compound_name_arguments(Call0, A, [])
+                                                   ; Call0 =.. [A|Args] ),
+                                                py_call(builtins:Call0, Result, Opts) ).
+
+%%% Hihger-order predicates: %%%
+
+fold([], Acc, _Combiner, Acc).
+
+fold([Head|Tail], Acc, Combiner, Result) :-
+    call(Combiner, Acc, Head, NewAcc),  % Apply Combiner(Acc, Head, NewAcc)
+    fold(Tail, NewAcc, Combiner, Result).
+
+foldexp([], Acc, _Combiner, Acc). 
+
+foldexp(A, Acc, Combiner, Result) :-
+    atom(A),
+    call(Combiner, Acc, A, Result).
+
+foldexp([Head|Tail], Acc, Combiner, Result) :-
+    \+is_list(Head),
+    call(Combiner, Acc, Head, NewAcc),  % Apply Combiner(Acc, Head, NewAcc)
+    foldexp(Tail, NewAcc, Combiner, Result).
+
+foldexp([Head|Tail], Acc, Combiner, Result) :-
+    is_list(Head),
+    foldexp(Head, Acc, Combiner, NewAcc),
+    foldexp(Tail, NewAcc, Combiner, Result).
 
 %Registration:
 :- dynamic fun/1.
