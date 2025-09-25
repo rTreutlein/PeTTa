@@ -144,6 +144,7 @@ subtract(Pred, [E|T], D, R) :- ( member_with_pred(E, D, Pred) -> subtract(Pred, 
 
 %%% Diagnostics / Testing: %%%
 repr(Term,R) :- format(string(R), '~q', [Term]).
+'println!'(Arg, Out) :- format('~w~n', [Arg]), Out = [].
 'trace!'(In, Content, Out) :- format('~w~n', [In]), Out = Content.
 test(A,B,R) :- (A == B -> E = '✅' ; E = '❌'),
                format(string(R), "is ~w, should ~w. ~w ~n", [A, B, E]).
@@ -176,9 +177,8 @@ unregister_fun(N/Arity) :- retractall(fun(N)),
                            abolish(N, Arity).
 
 :- maplist(register_fun, [superpose, empty, let, 'let*', '+','-','*','/', '%', min, max,
-                          '<','>','==', '=', '<=', '>=', and, or, not, 
-                          sqrt, exp, log, cos, sin,
-                          'car-atom', 'cdr-atom', repr, 'trace!', test,
+                          '<','>','==', '=', '<=', '>=', and, or, not, sqrt, exp, log, cos, sin,
+                          'car-atom', 'cdr-atom', repr, 'println!', 'trace!', test,
                           append, length, sort, msort, memberfast, excludefast, list_to_set, maplist,
                           'add-atom', 'remove-atom', 'get-atoms', 'match', 'match-once', 'is-var', 'is-expr', 'get-mettatype',
                           'decons', 'fold-flat', 'fold-nested', 'map-flat', 'map-nested', 'union', 'intersection', 'subtract',
