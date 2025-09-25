@@ -41,8 +41,9 @@ translate_expr([H|T], Goals, Out) :-
                                                   translate_case(PairsExpr, Kv, Out, IfGoal),
                                                   append(GsH, Gk, G0),
                                                   append(G0, [IfGoal], Goals)
-        ; HV = sealed, T = [Vars, Expr] -> 
-
+        ; HV = sealed, T = [Vars, Expr] -> translate_expr(Expr, Ge, Out),
+                                           goals_list_to_conj(Ge, Con),
+                                           Goals = [copy_term(Vars,Con,NVars,Ncon),Ncon]
         ; HV == let, T = [Pat, Val, In] -> translate_expr(Pat, Gp, P),
                                            translate_expr(Val, Gv, V),
                                            translate_expr(In,  Gi, I),

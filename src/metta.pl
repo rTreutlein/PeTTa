@@ -95,7 +95,6 @@ test(A,B,R) :- (A == B -> E = '✅' ; E = '❌'),
 %Types
 'is-var'(A,R) :- (var(A) -> R=true ; R=false).
 'is-expr'(A,R) :- (is_list(A) -> R=true ; R=false).
-'get-mettatype'(A,R) :- (var(A) -> R='variable' ; (atom(A) -> R='atom' ; R='expression')).
 
 fold([], Acc, _Combiner, Acc).
 
@@ -137,6 +136,10 @@ subtract([E|T], D, R) =>
         subtract(T, D, R1)
     ).
 
+
+
+'=alpha'(A,B) :- A =@= B.
+
 %Registration:
 :- dynamic fun/1.
 register_fun(N) :- (fun(N) -> true ; assertz(fun(N))).
@@ -145,6 +148,7 @@ unregister_fun(N/Arity) :- retractall(fun(N)),
 
 :- maplist(register_fun, [superpose, empty, let, 'let*', '+','-','*','/', '%', min, max,
                           '<','>','==', '=', '<=', '>=', and, or, not, 'car-atom', 'cdr-atom', 'trace!', test,
-                          append, length, sort, msort, memberfast, excludefast, list_to_set,
+                          append, length, sort, msort, memberfast, excludefast, list_to_set, maplist,
                           'add-atom', 'remove-atom', 'get-atoms', 'match', 'match-once', 'is-var', 'is-expr', 'get-mettatype',
-                          'decons', 'fold', 'foldexp', 'union', 'subtract', 'unify', 'py-call', 'get-type', 'get-metatype']).
+                          'decons', 'fold', 'foldexp', 'union', 'subtract', 'unify', 'py-call', 'get-type', 'get-metatype',
+                          '=alpha','=@=']).
