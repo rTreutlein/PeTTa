@@ -124,6 +124,9 @@ subtract(Pred, [E|T], D, R) :-
         subtract(Pred, T, D, R1)
     ).
 
+%%% printing %%%
+'println!'(Arg, Out) :- format('~w~n', [Arg]), Out = [].
+
 %%% Diagnostics / Testing: %%%
 'trace!'(In, Content, Out) :- format('~w~n', [In]), Out = Content.
 test(A,B,R) :- (A == B -> E = '✅' ; E = '❌'),
@@ -203,7 +206,7 @@ unregister_fun(N/Arity) :- retractall(fun(N)),
                            abolish(N, Arity).
 
 :- maplist(register_fun, [superpose, empty, let, 'let*', '+','-','*','/', '%', min, max,
-                          '<','>','==', '=', '<=', '>=', and, or, not, 'car-atom', 'cdr-atom', 'trace!', test,
+                          '<','>','==', '=', '<=', '>=', and, or, not, 'car-atom', 'cdr-atom', 'println!', 'trace!', test,
                           append, length, sort, msort, memberfast, excludefast, list_to_set, maplist,
                           'add-atom', 'remove-atom', 'get-atoms', 'match', 'match-once', 'is-var', 'is-expr', 'get-mettatype',
                           'decons', 'fold-flat', 'fold-nested', 'map-flat', 'map-nested', 'union', 'intersection', 'subtract',
