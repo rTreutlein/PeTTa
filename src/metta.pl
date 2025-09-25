@@ -129,6 +129,20 @@ union(List1, [Head2|Tail2], [Head2|Output]):-
 union(List1, [Head2|Tail2], Output):-
     member_strict(Head2,List1), union(List1,Tail2,Output).  
 
+intersection([], _, _, []) :- !.
+intersection(_, [], _, []) :- !.
+intersection([Head1|Tail1], List2, Pred, [Head1|Output]) :-
+    member_with_pred(Head1, List2, Pred),
+    intersection(Tail1, List2, Pred, Output).
+intersection([Head1|Tail1], List2, Pred, Output) :-
+    \+ member_with_pred(Head1, List2, Pred),
+    intersection(Tail1, List2, Pred, Output).
+
+member_with_pred(Element, [Head|_], Pred) :-
+    call(Pred, Element, Head, true).
+member_with_pred(Element, [_|Tail], Pred) :-
+    member_with_pred(Element, Tail, Pred).
+
 subtract([], _, R) =>
     R = [].
 subtract([E|T], D, R) =>
