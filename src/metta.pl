@@ -82,19 +82,36 @@ list_to_set_helper(Pred, [H|T], Acc, Set) :-
     ;   list_to_set_helper(Pred, T, [H|Acc], Set)
     ).
 
+concat(List1, List2, Result) :- append(List1, List2, Result).
+
 member_with_pred(Element, [Head|_], Pred) :-
     call(Pred, Element, Head, true).
 member_with_pred(Element, [_|Tail], Pred) :-
     member_with_pred(Element, Tail, Pred).
 
-union(_Pred, [], [], []) :- !.
-union(_Pred, List1, [], List1) :- !.
-union(Pred, List1, [Head2|Tail2], [Head2|Output]) :-
+list_to_set(Pred, List, Set) :-
+    list_to_set_helper(Pred, List, [], Set).                                                                                                                                                 
+                                                                                                                                                                                             
+list_to_set_helper(_Pred, [], Acc, Acc).
+list_to_set_helper(Pred, [H|T], Acc, Set) :-
+    (   member_with_pred(H, Acc, Pred)
+    ->  list_to_set_helper(Pred, T, Acc, Set)
+    ;   list_to_set_helper(Pred, T, [H|Acc], Set)
+    ).
+
+union(Pred, List1, List2, Result) :-
+    list_to_set(Pred, List1, Set1), 
+    list_to_set(Pred, List2, Set2), !,
+    union_helper(Pred, Set1, Set2, Result).
+
+union_helper(_Pred, [], [], []) :- !.
+union_helper(_Pred, List1, [], List1) :- !.
+union_helper(Pred, List1, [Head2|Tail2], [Head2|Output]) :-
     \+ member_with_pred(Head2, List1, Pred),
-    union(Pred, List1, Tail2, Output).
-union(Pred, List1, [Head2|Tail2], Output) :-
+    union_helper(Pred, List1, Tail2, Output).
+union_helper(Pred, List1, [Head2|Tail2], Output) :-
     member_with_pred(Head2, List1, Pred),
-    union(Pred, List1, Tail2, Output).
+    union_helper(Pred, List1, Tail2, Output).
 
 intersection(_Pred, [], _, []) :- !.
 intersection(_Pred, _, [], []) :- !.
@@ -142,49 +159,49 @@ test(A,B,R) :- (A == B -> E = '✅' ; E = '❌'),
 
 %%% Higher-order predicates: %%%
 
-fold_flat([], Acc, _Combiner, Acc).
+'fold-flat'([], Acc, _Combiner, Acc).
 
-fold_flat([Head|Tail], Acc, Combiner, Result) :-
+'fold-flat'([Head|Tail], Acc, Combiner, Result) :-
     call(Combiner, Acc, Head, NewAcc),  % Apply Combiner(Acc, Head, NewAcc)
-    fold_flat(Tail, NewAcc, Combiner, Result).
+    'fold-flat'(Tail, NewAcc, Combiner, Result).
 
-fold_nested([], Acc, _Combiner, Acc). 
+'fold-nested'([], Acc, _Combiner, Acc). 
 
-fold_nested(A, Acc, Combiner, Result) :-
+'fold-nested'(A, Acc, Combiner, Result) :-
     atom(A),
     call(Combiner, Acc, A, Result).
 
-fold_nested([Head|Tail], Acc, Combiner, Result) :-
+'fold-nested'([Head|Tail], Acc, Combiner, Result) :-
     \+is_list(Head),
     call(Combiner, Acc, Head, NewAcc),  % Apply Combiner(Acc, Head, NewAcc)
-    fold_nested(Tail, NewAcc, Combiner, Result).
+    'fold-nested'(Tail, NewAcc, Combiner, Result).
 
-fold_nested([Head|Tail], Acc, Combiner, Result) :-
+'fold-nested'([Head|Tail], Acc, Combiner, Result) :-
     is_list(Head),
-    fold_nested(Head, Acc, Combiner, NewAcc),
-    fold_nested(Tail, NewAcc, Combiner, Result).
+    'fold-nested'(Head, Acc, Combiner, NewAcc),
+    'fold-nested'(Tail, NewAcc, Combiner, Result).
 
-map_flat([], _Mapper, []).
+'map-flat'([], _Mapper, []).
 
-map_flat([Head|Tail], Mapper, [NewHead|NewTail]) :-
+'map-flat'([Head|Tail], Mapper, [NewHead|NewTail]) :-
     call(Mapper, Head, NewHead),
-    map_flat(Tail, Mapper, NewTail).
+    'map-flat'(Tail, Mapper, NewTail).
 
-map_nested(Atom, Mapper, Result) :-
+'map-nested'(Atom, Mapper, Result) :-
     atom(Atom),
     call(Mapper, Atom, Result).
 
-map_nested([], _Mapper, []).
+'map-nested'([], _Mapper, []).
 
-map_nested([Head|Tail], Mapper, [NewHead|NewTail]) :-
+'map-nested'([Head|Tail], Mapper, [NewHead|NewTail]) :-
     is_list(Head),
-    map_nested(Head, Mapper, NewHead),
-    map_nested(Tail, Mapper, NewTail).
+    'map-nested'(Head, Mapper, NewHead),
+    'map-nested'(Tail, Mapper, NewTail).
 
-map_nested([Head|Tail], Mapper, [NewHead|NewTail]) :-
+'map-nested'([Head|Tail], Mapper, [NewHead|NewTail]) :-
     \+is_list(Head),
     call(Mapper, Head, NewHead),
-    map_nested(Tail, Mapper, NewTail).
+    'map-nested'(Tail, Mapper, NewTail).
 
 %Registration:
 :- dynamic fun/1.
@@ -196,5 +213,5 @@ unregister_fun(N/Arity) :- retractall(fun(N)),
                           '<','>','==', '=', '<=', '>=', and, or, not, 'car-atom', 'cdr-atom', 'trace!', test,
                           append, length, sort, msort, memberfast, excludefast, list_to_set, maplist,
                           'add-atom', 'remove-atom', 'get-atoms', 'match', 'match-once', 'is-var', 'is-expr', 'get-mettatype',
-                          'decons', 'fold_flat', 'fold_nested', 'map_flat', 'map_nested', 'union', 'intersection', 'subtract', 'unify', 'py-call', 'get-type', 'get-metatype',
-                          '=alpha','=@=']).
+                          'decons', 'fold-flat', 'fold-nested', 'map-flat', 'map-nested', 'union', 'intersection', 'subtract',
+                          'unify', 'py-call', 'get-type', 'get-metatype', '=alpha','=@=', 'concat']).
