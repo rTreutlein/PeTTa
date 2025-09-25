@@ -71,6 +71,17 @@ get_function_type([F,Arg], T) :- match('&self', [':',F,['->',A,B]], _, _),
 'is-var'(A,R) :- (var(A) -> R=true ; R=false).
 'is-expr'(A,R) :- (is_list(A) -> R=true ; R=false).
 
+% Convert a list to a set using the given equality predicate
+list_to_set(Pred, List, Set) :-
+    list_to_set_helper(Pred, List, [], Set).
+
+list_to_set_helper(_Pred, [], Acc, Acc).
+list_to_set_helper(Pred, [H|T], Acc, Set) :-
+    (   member_with_pred(H, Acc, Pred)
+    ->  list_to_set_helper(Pred, T, Acc, Set)
+    ;   list_to_set_helper(Pred, T, [H|Acc], Set)
+    ).
+
 member_with_pred(Element, [Head|_], Pred) :-
     call(Pred, Element, Head, true).
 member_with_pred(Element, [_|Tail], Pred) :-
