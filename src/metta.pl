@@ -23,7 +23,6 @@ let(V, Val, In, Out) :- 'let*'([[V,Val]], In, Out).
 '>='(A,B,R) :- (A >= B -> R=true ; R=false).
 min(A,B,R)  :- R is min(A,B).
 max(A,B,R)  :- R is max(A,B).
-
 exp(Arg,R) :- R is exp(Arg).
 
 %%% Boolean Logic: %%%
@@ -72,61 +71,79 @@ get_function_type([F,Arg], T) :- match('&self', [':',F,['->',A,B]], _, _),
 %Commonly used predicates:
 'is-var'(A,R) :- (var(A) -> R=true ; R=false).
 'is-expr'(A,R) :- (is_list(A) -> R=true ; R=false).
-
 concat(List1, List2, Result) :- append(List1, List2, Result).
 
 %Helper functions
-member_with_pred(Element, [Head|_], Pred) :-
-    call(Pred, Element, Head, true).
-member_with_pred(Element, [_|Tail], Pred) :-
-    member_with_pred(Element, Tail, Pred).
+member_with_pred(Element, [Head|_], Pred) :- call(Pred, Element, Head, true).
+member_with_pred(Element, [_|Tail], Pred) :- member_with_pred(Element, Tail, Pred).
 
 % Convert a list to a set using the given equality predicate
-list_to_set(Pred, List, Set) :-
-    list_to_set_helper(Pred, List, [], Set).                                                                                                                                                 
-                                                                                                                                                                                             
+list_to_set(Pred, List, Set) :- list_to_set_helper(Pred, List, [], Set).
 list_to_set_helper(_Pred, [], Acc, Acc).
-list_to_set_helper(Pred, [H|T], Acc, Set) :-
-    (   member_with_pred(H, Acc, Pred)
-    ->  list_to_set_helper(Pred, T, Acc, Set)
-    ;   list_to_set_helper(Pred, T, [H|Acc], Set)
-    ).
+list_to_set_helper(Pred, [H|T], Acc, Set) :- ( member_with_pred(H, Acc, Pred)
+                                               -> list_to_set_helper(Pred, T, Acc, Set)
+                                                ; list_to_set_helper(Pred, T, [H|Acc], Set) ).
 
 %Set based Union
-union(Pred, List1, List2, Result) :-
-    list_to_set(Pred, List1, Set1), 
-    list_to_set(Pred, List2, Set2), !,
-    union_helper(Pred, Set1, Set2, Result).
+union(Pred, List1, List2, Result) :- list_to_set(Pred, List1, Set1),
+                                     list_to_set(Pred, List2, Set2), !,
+                                     union_helper(Pred, Set1, Set2, Result).
 
 union_helper(_Pred, [], [], []) :- !.
 union_helper(_Pred, List1, [], List1) :- !.
-union_helper(Pred, List1, [Head2|Tail2], [Head2|Output]) :-
-    \+ member_with_pred(Head2, List1, Pred),
-    union_helper(Pred, List1, Tail2, Output).
-union_helper(Pred, List1, [Head2|Tail2], Output) :-
-    member_with_pred(Head2, List1, Pred),
-    union_helper(Pred, List1, Tail2, Output).
+union_helper(Pred, List1, [Head2|Tail2], [Head2|Output]) :- \+ member_with_pred(Head2, List1, Pred),
+                                                               union_helper(Pred, List1, Tail2, Output).
+union_helper(Pred, List1, [Head2|Tail2], Output) :- member_with_pred(Head2, List1, Pred),
+                                                    union_helper(Pred, List1, Tail2, Output).
 
 %List based Intersection
 intersection(_Pred, [], _, []) :- !.
 intersection(_Pred, _, [], []) :- !.
-intersection(Pred, [Head1|Tail1], List2, [Head1|Output]) :-
-    member_with_pred(Head1, List2, Pred),
-    intersection(Pred, Tail1, List2, Output).
-intersection(Pred, [Head1|Tail1], List2, Output) :-
-    \+ member_with_pred(Head1, List2, Pred),
-    intersection(Pred, Tail1, List2, Output).
+intersection(Pred, [Head1|Tail1], List2, [Head1|Output]) :- member_with_pred(Head1, List2, Pred),
+                                                            intersection(Pred, Tail1, List2, Output).
+intersection(Pred, [Head1|Tail1], List2, Output) :- \+ member_with_pred(Head1, List2, Pred),
+                                                    intersection(Pred, Tail1, List2, Output).
 
 %List based Subtraction
 subtract(_Pred, [], _, []).
-subtract(Pred, [E|T], D, R) :-
-    (   member_with_pred(E, D, Pred)
-    ->  subtract(Pred, T, D, R)
-    ;   R = [E|R1],
-        subtract(Pred, T, D, R1)
-    ).
+subtract(Pred, [E|T], D, R) :- ( member_with_pred(E, D, Pred) -> subtract(Pred, T, D, R)
+                                                               ; R = [E|R1],
+                                                                 subtract(Pred, T, D, R1) ).
+
+%%% Higher-order predicates: %%%
+'fold-flat'([], Acc, _Combiner, Acc).
+'fold-flat'([Head|Tail], Acc, Combiner, Result) :- call(Combiner, Acc, Head, NewAcc),  % Apply Combiner(Acc, Head, NewAcc)
+                                                   'fold-flat'(Tail, NewAcc, Combiner, Result).
+
+'fold-nested'([], Acc, _Combiner, Acc).
+'fold-nested'(A, Acc, Combiner, Result) :- atom(A),
+                                           call(Combiner, Acc, A, Result).
+
+'fold-nested'([Head|Tail], Acc, Combiner, Result) :- \+ is_list(Head),
+                                                     call(Combiner, Acc, Head, NewAcc),  % Apply Combiner(Acc, Head, NewAcc)
+                                                     'fold-nested'(Tail, NewAcc, Combiner, Result).
+
+'fold-nested'([Head|Tail], Acc, Combiner, Result) :- is_list(Head),
+                                                     'fold-nested'(Head, Acc, Combiner, NewAcc),
+                                                     'fold-nested'(Tail, NewAcc, Combiner, Result).
+
+'map-flat'([], _Mapper, []).
+'map-flat'([Head|Tail], Mapper, [NewHead|NewTail]) :- call(Mapper, Head, NewHead),
+                                                      'map-flat'(Tail, Mapper, NewTail).
+
+'map-nested'([], _Mapper, []).
+'map-nested'(Atom, Mapper, Result) :- atom(Atom),
+                                      call(Mapper, Atom, Result).
+'map-nested'([Head|Tail], Mapper, [NewHead|NewTail]) :- is_list(Head),
+                                                        'map-nested'(Head, Mapper, NewHead),
+                                                        'map-nested'(Tail, Mapper, NewTail).
+
+'map-nested'([Head|Tail], Mapper, [NewHead|NewTail]) :- \+ is_list(Head),
+                                                        call(Mapper, Head, NewHead),
+                                                        'map-nested'(Tail, Mapper, NewTail).
 
 %%% Diagnostics / Testing: %%%
+repr(Term,R) :- format(string(R), '~q', [Term]).
 'trace!'(In, Content, Out) :- format('~w~n', [In]), Out = Content.
 test(A,B,R) :- (A == B -> E = '✅' ; E = '❌'),
                format(string(R), "is ~w, should ~w. ~w ~n", [A, B, E]).
@@ -152,53 +169,7 @@ test(A,B,R) :- (A == B -> E = '✅' ; E = '❌'),
                                                    ; Call0 =.. [A|Args] ),
                                                 py_call(builtins:Call0, Result, Opts) ).
 
-%%% Higher-order predicates: %%%
-
-'fold-flat'([], Acc, _Combiner, Acc).
-
-'fold-flat'([Head|Tail], Acc, Combiner, Result) :-
-    call(Combiner, Acc, Head, NewAcc),  % Apply Combiner(Acc, Head, NewAcc)
-    'fold-flat'(Tail, NewAcc, Combiner, Result).
-
-'fold-nested'([], Acc, _Combiner, Acc). 
-
-'fold-nested'(A, Acc, Combiner, Result) :-
-    atom(A),
-    call(Combiner, Acc, A, Result).
-
-'fold-nested'([Head|Tail], Acc, Combiner, Result) :-
-    \+is_list(Head),
-    call(Combiner, Acc, Head, NewAcc),  % Apply Combiner(Acc, Head, NewAcc)
-    'fold-nested'(Tail, NewAcc, Combiner, Result).
-
-'fold-nested'([Head|Tail], Acc, Combiner, Result) :-
-    is_list(Head),
-    'fold-nested'(Head, Acc, Combiner, NewAcc),
-    'fold-nested'(Tail, NewAcc, Combiner, Result).
-
-'map-flat'([], _Mapper, []).
-
-'map-flat'([Head|Tail], Mapper, [NewHead|NewTail]) :-
-    call(Mapper, Head, NewHead),
-    'map-flat'(Tail, Mapper, NewTail).
-
-'map-nested'(Atom, Mapper, Result) :-
-    atom(Atom),
-    call(Mapper, Atom, Result).
-
-'map-nested'([], _Mapper, []).
-
-'map-nested'([Head|Tail], Mapper, [NewHead|NewTail]) :-
-    is_list(Head),
-    'map-nested'(Head, Mapper, NewHead),
-    'map-nested'(Tail, Mapper, NewTail).
-
-'map-nested'([Head|Tail], Mapper, [NewHead|NewTail]) :-
-    \+is_list(Head),
-    call(Mapper, Head, NewHead),
-    'map-nested'(Tail, Mapper, NewTail).
-
-%Registration:
+%%% Registration: %%%
 :- dynamic fun/1.
 register_fun(N) :- (fun(N) -> true ; assertz(fun(N))).
 unregister_fun(N/Arity) :- retractall(fun(N)),
@@ -207,7 +178,7 @@ unregister_fun(N/Arity) :- retractall(fun(N)),
 :- maplist(register_fun, [superpose, empty, let, 'let*', '+','-','*','/', '%', min, max,
                           '<','>','==', '=', '<=', '>=', and, or, not, 
                           sqrt, exp, log, cos, sin,
-                          'car-atom', 'cdr-atom', 'trace!', test,
+                          'car-atom', 'cdr-atom', repr, 'trace!', test,
                           append, length, sort, msort, memberfast, excludefast, list_to_set, maplist,
                           'add-atom', 'remove-atom', 'get-atoms', 'match', 'match-once', 'is-var', 'is-expr', 'get-mettatype',
                           'decons', 'fold-flat', 'fold-nested', 'map-flat', 'map-nested', 'union', 'intersection', 'subtract',
