@@ -71,11 +71,13 @@ get_function_type([F,Arg], T) :- match('&self', [':',F,['->',A,B]], _, _),
 'is-var'(A,R) :- (var(A) -> R=true ; R=false).
 'is-expr'(A,R) :- (is_list(A) -> R=true ; R=false).
 
-member_strict(X, [Y|_]) :- X == Y.
-member_strict(X, [_|T]) :- member_strict(X, T).
+member_with_pred(Element, [Head|_], Pred) :-
+    call(Pred, Element, Head, true).
+member_with_pred(Element, [_|Tail], Pred) :-
+    member_with_pred(Element, Tail, Pred).
 
-union(Pred, [], [], []) :- !.
-union(Pred, List1, [], List1) :- !.
+union(_Pred, [], [], []) :- !.
+union(_Pred, List1, [], List1) :- !.
 union(Pred, List1, [Head2|Tail2], [Head2|Output]) :-
     \+ member_with_pred(Head2, List1, Pred),
     union(Pred, List1, Tail2, Output).
@@ -83,8 +85,8 @@ union(Pred, List1, [Head2|Tail2], Output) :-
     member_with_pred(Head2, List1, Pred),
     union(Pred, List1, Tail2, Output).
 
-intersection(Pred, [], _, []) :- !.
-intersection(Pred, _, [], []) :- !.
+intersection(_Pred, [], _, []) :- !.
+intersection(_Pred, _, [], []) :- !.
 intersection(Pred, [Head1|Tail1], List2, [Head1|Output]) :-
     member_with_pred(Head1, List2, Pred),
     intersection(Pred, Tail1, List2, Output).
@@ -92,12 +94,7 @@ intersection(Pred, [Head1|Tail1], List2, Output) :-
     \+ member_with_pred(Head1, List2, Pred),
     intersection(Pred, Tail1, List2, Output).
 
-member_with_pred(Element, [Head|_], Pred) :-
-    call(Pred, Element, Head, true).
-member_with_pred(Element, [_|Tail], Pred) :-
-    member_with_pred(Element, Tail, Pred).
-
-subtract(Pred, [], _, R) =>
+subtract(_Pred, [], _, R) =>
     R = [].
 subtract(Pred, [E|T], D, R) =>
     (   member_with_pred(E, D, Pred)
@@ -105,8 +102,6 @@ subtract(Pred, [E|T], D, R) =>
     ;   R = [E|R1],
         subtract(Pred, T, D, R1)
     ).
-
-
 
 %%% Diagnostics / Testing: %%%
 'trace!'(In, Content, Out) :- format('~w~n', [In]), Out = Content.
