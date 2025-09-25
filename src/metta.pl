@@ -71,24 +71,15 @@ get_function_type([F,Arg], T) :- match('&self', [':',F,['->',A,B]], _, _),
 'is-var'(A,R) :- (var(A) -> R=true ; R=false).
 'is-expr'(A,R) :- (is_list(A) -> R=true ; R=false).
 
-% Convert a list to a set using the given equality predicate
-list_to_set(Pred, List, Set) :-
-    list_to_set_helper(Pred, List, [], Set).
-
-list_to_set_helper(_Pred, [], Acc, Acc).
-list_to_set_helper(Pred, [H|T], Acc, Set) :-
-    (   member_with_pred(H, Acc, Pred)
-    ->  list_to_set_helper(Pred, T, Acc, Set)
-    ;   list_to_set_helper(Pred, T, [H|Acc], Set)
-    ).
-
 concat(List1, List2, Result) :- append(List1, List2, Result).
 
+%Helper functions
 member_with_pred(Element, [Head|_], Pred) :-
     call(Pred, Element, Head, true).
 member_with_pred(Element, [_|Tail], Pred) :-
     member_with_pred(Element, Tail, Pred).
 
+% Convert a list to a set using the given equality predicate
 list_to_set(Pred, List, Set) :-
     list_to_set_helper(Pred, List, [], Set).                                                                                                                                                 
                                                                                                                                                                                              
@@ -99,6 +90,7 @@ list_to_set_helper(Pred, [H|T], Acc, Set) :-
     ;   list_to_set_helper(Pred, T, [H|Acc], Set)
     ).
 
+%Set based Union
 union(Pred, List1, List2, Result) :-
     list_to_set(Pred, List1, Set1), 
     list_to_set(Pred, List2, Set2), !,
@@ -113,6 +105,7 @@ union_helper(Pred, List1, [Head2|Tail2], Output) :-
     member_with_pred(Head2, List1, Pred),
     union_helper(Pred, List1, Tail2, Output).
 
+%List based Intersection
 intersection(_Pred, [], _, []) :- !.
 intersection(_Pred, _, [], []) :- !.
 intersection(Pred, [Head1|Tail1], List2, [Head1|Output]) :-
@@ -122,6 +115,7 @@ intersection(Pred, [Head1|Tail1], List2, Output) :-
     \+ member_with_pred(Head1, List2, Pred),
     intersection(Pred, Tail1, List2, Output).
 
+%List based Subtraction
 subtract(_Pred, [], _, R) =>
     R = [].
 subtract(Pred, [E|T], D, R) =>
