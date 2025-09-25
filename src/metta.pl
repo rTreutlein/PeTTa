@@ -151,5 +151,5 @@ unregister_fun(N/Arity) :- retractall(fun(N)),
                           '<','>','==', '=', '<=', '>=', and, or, not, 'car-atom', 'cdr-atom', 'trace!', test,
                           append, length, sort, msort, memberfast, excludefast, list_to_set, maplist,
                           'add-atom', 'remove-atom', 'get-atoms', 'match', 'match-once', 'is-var', 'is-expr', 'get-mettatype',
-                          'decons', 'fold', 'foldexp', 'union', 'subtract', 'unify', 'py-call', 'get-type', 'get-metatype',
+                          'decons', 'fold', 'foldexp', 'union', 'intersection', 'subtract', 'unify', 'py-call', 'get-type', 'get-metatype',
                           '=alpha','=@=']).
