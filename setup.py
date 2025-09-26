@@ -7,7 +7,7 @@ setup(
     package_dir={"": "python"},
     include_package_data=True,
     install_requires=[
-        'pyswip',
+        'janus',
     ],
     author="Your Name",
     author_email="your.email@example.com",
