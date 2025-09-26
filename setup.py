@@ -5,8 +5,9 @@ setup(
     version="0.1.0",
     packages=find_packages(where="python"),
     package_dir={"": "python"},
+    include_package_data=True,
     install_requires=[
-        # Add any dependencies here, e.g., 'swiplserver' if needed for Prolog integration
+        'pyswip',
     ],
     author="Your Name",
     author_email="your.email@example.com",
