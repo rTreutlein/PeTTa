@@ -57,6 +57,10 @@ translate_expr([H|T], Goals, Out) :-
                                              Goals = [Goal | Inner]
         ; HV == cut, T = [] -> append(GsH, [(!)], Goals),
                                Out = true
+        ; HV == commit, T = [X] ->
+          translate_expr(X, GsX, Out),
+          append(GsH, GsX, Gs1),
+          append(Gs1, [(!)], Goals)
         ; ( HV == 'add-atom' ; HV == 'remove-atom' ) -> append(T, [Out], RawArgs),
                                                         Goal =.. [HV|RawArgs],
                                                         append(GsH, [Goal], Goals)
