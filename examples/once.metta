@@ -2,7 +2,7 @@
 (foo 2)
 
 (= (match-single $space $pat $ret)
-   (commit (match $space $pat $ret)))
+   (once (match $space $pat $ret)))
 
 !(let $x (match-single &self (foo $1) $1) (add-atom &self (bar $x)))
 
