@@ -59,8 +59,8 @@ translate_expr([H|T], Goals, Out) :-
                                Out = true
         ; HV == once, T = [X] ->
           translate_expr(X, GsX, Out),
-          append(GsH, GsX, Gs1),
-          append(Gs1, [(!)], Goals)
+          goals_list_to_conj(GsX, Conj),
+          append(GsH, [once(Conj)], Goals)
         ; ( HV == 'add-atom' ; HV == 'remove-atom' ) -> append(T, [Out], RawArgs),
                                                         Goal =.. [HV|RawArgs],
                                                         append(GsH, [Goal], Goals)
