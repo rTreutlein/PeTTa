@@ -1,5 +1,5 @@
 (= (add-atom-no-duplicate $Space $Atom)
-   (if (== () (collapse (match-once $Space $Atom $Atom)))
+   (if (== () (collapse (once (match $Space $Atom $Atom))))
        (add-atom $Space $Atom)
        (empty)))
 

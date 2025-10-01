@@ -1,5 +1,5 @@
 (= (add-atom-no-duplicate $Space $Atom)
-   (if (== () (collapse (match-once $Space $Atom $Atom)))
+   (if (== () (collapse (once (match $Space $Atom $Atom))))
        (add-atom $Space $Atom)
        (empty)))
 
@@ -11,7 +11,7 @@
 
 (= (mate)
    (case (match &self (num (M $t)) $t)
-         (($t (case (match-once &self (num (W $t)) $t)
+         (($t (case (once (match &self (num (W $t)) $t))
                     (($t (add-atom-no-duplicate &self (num (C $t))))))))))
 
 ;Apply expand K times:
