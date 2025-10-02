@@ -1,4 +1,3 @@
-;test deactivated with file name extension as it is computationally expensive, only feasible with the compiler
 (= (find-divisor $n $test-divisor)
    (if (> (* $test-divisor $test-divisor) $n)
        $n
