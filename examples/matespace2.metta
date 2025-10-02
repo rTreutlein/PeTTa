@@ -5,12 +5,12 @@
 
 ;Rewrite rules:
 (= (expand)
-   (case (match &self (num $t) $t) 
+   (case (superpose (collapse (match &self (num $t) $t)))
          (($t ((add-atom-no-duplicate &self (num (M $t)))
                (add-atom-no-duplicate &self (num (W $t))))))))
 
 (= (mate)
-   (case (match &self (num (M $t)) $t)
+   (case (superpose (collapse (match &self (num (M $t)) $t)))
          (($t (case (once (match &self (num (W $t)) $t))
                     (($t (add-atom-no-duplicate &self (num (C $t))))))))))
 
@@ -28,4 +28,4 @@
           ($g (rewriteK $K)))
           (match &self (num $1) (num $1))))
 
-!(test (length (collapse (mate-space-demo 300))) 1077002) 
+!(test (length (collapse (mate-space-demo 80))) 1297533)
