@@ -18,18 +18,10 @@ use itertools::Itertools;
 // ---------- Global space (init once) ----------
 static GLOBAL_SPACE: OnceLock<Mutex<Space>> = OnceLock::new();
 
-const SPACE_EXPRS: &str = r#"
-(exec 0 (, (Something (very specific))) (, MATCHED))
-
-(Something (very specific))
-"#;
-
 #[inline]
 fn get_space() -> &'static Mutex<Space> {
     GLOBAL_SPACE.get_or_init(|| {
         let mut s = Space::new();
-        // Preload default program once
-        let _ = s.load_all_sexpr(SPACE_EXPRS.as_bytes());
         Mutex::new(s)
     })
 }
@@ -115,37 +107,25 @@ pub extern "C" fn rust_mork(command: *const c_char, input: *const c_char) -> *mu
         handled = true;
     }
     else if cmd.eq_ignore_ascii_case("query") {
-    let space = get_space();
-    let res = {
-        let guard = match space.lock() {
-            Ok(g) => g,
-            Err(_) => return CString::new("ERR: space poisoned").unwrap().into_raw(),
+        let space = get_space();
+        let res = {
+            let guard = match space.lock() {
+                Ok(g) => g,
+                Err(_) => return CString::new("ERR: space poisoned").unwrap().into_raw(),
+            };
+            let s: &Space = &*guard;
+
+            let mut v: Vec<u8> = Vec::new();
+            // pattern from `inp`, project `_1`
+            let _written: usize = s.dump_sexpr(expr!(s, inp), expr!(s, "_1"), &mut v);
+
+            // Convert to UTF-8 String
+            String::from_utf8(v).map_err(|_| "utf8 decode failed".to_string())
         };
-        let s: &Space = &*guard;
 
-        let mut v: Vec<u8> = Vec::new();
-        // pattern from `inp`, project `_1`
-        let _written: usize = s.dump_sexpr(expr!(s, inp), expr!(s, "_1"), &mut v);
-
-        // Convert to UTF-8 String
-        String::from_utf8(v).map_err(|_| "utf8 decode failed".to_string())
-    };
-
-    out = res.unwrap_or_else(|e| format!("ERR: {e}"));
-    handled = true;
-}
-
-
-    // ---- your previous string utils remain unchanged ----
-    if cmd.eq_ignore_ascii_case("upper") {
-        out = inp.to_uppercase();
+        out = res.unwrap_or_else(|e| format!("ERR: {e}"));
         handled = true;
     }
-    if cmd.eq_ignore_ascii_case("lower") {
-        out = inp.to_lowercase();
-        handled = true;
-    }
-
     if !handled {
         out = inp.to_string();
     }
