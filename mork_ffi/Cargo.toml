@@ -1,0 +1,32 @@
+[package]
+name = "mork_ffi"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+log = { workspace=true }
+env_logger = { workspace=true }
+pathmap = { workspace = true, features = [] }
+mork-frontend = { workspace=true }
+mork-bytestring = { workspace=true }
+bucket_map = { workspace = true }
+memmap2 = "0.9.5"
+#neo4rs = { version = "0.9.0-rc.5" , features = ["unstable-bolt-protocol-impl-v2"]}
+#tokio = "1.43.0"
+uuid = { version = "1.14.0" , features = ["v4", "fast-rng"] }
+futures = "0.3.31"
+async-stream = "0.3.6"
+freeze = { workspace = true }
+neo4rs = { version = "0.9.0-rc.6", optional = true }
+tokio = { version = "1.44.0", optional = true }
+rand = "0.9.1"
+clap = { version = "4.5.47", features = ["derive"] }
+serde = { version = "1.0.225", features = ["derive"] }
+wasmtime = { version = "37.0.1", features = ["winch"] }
+itertools = "0.14.0"
+base64 = "0.22.1"
+mork = { path = "../kernel" }
+
+[lib]
+name = "mork_ffi"
+crate-type = ["cdylib"]
