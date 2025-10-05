@@ -1,14 +1,6 @@
 // main.c
 #include <SWI-Prolog.h>
 #include <string.h>
-#include <dlfcn.h>
-
-// Preload Rust lib so its symbols are globally visible
-__attribute__((constructor))
-static void preload_mork(void) {
-  dlopen("/home/nartech/MORK/target/release/libmork_ffi.so",
-         RTLD_LAZY | RTLD_GLOBAL);
-}
 
 // Rust functions we call
 extern char *rust_mork(const char *command, const char *input);
