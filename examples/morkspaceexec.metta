@@ -5,11 +5,11 @@
        (empty)))
 
 !(let $temp (let $x (range 1 100000)
-                 (mork_add-atom &mork (friend sam $x)))
+                 (add-atom &mork (friend sam $x)))
       (empty))
 
-!(mork_add-atom &mork (exec 0 (, (friend sam $x)) 
-                              (, (freund sam $x))))
-!(mork_exec &mork)
+!(add-atom &mork (exec 0 (, (friend sam $x))
+                         (, (freund sam $x))))
+!(mm2-exec &mork)
 
-!(test (length (collapse (mork_match &mork (freund sam $x) (freund sam $x)))) 99999)
+!(test (length (collapse (match &mork (freund sam $x) (freund sam $x)))) 99999)

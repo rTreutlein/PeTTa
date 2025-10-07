@@ -12,18 +12,18 @@
                                       ;K=300000000 takes 20m2s  with MORK, out of mem with predicate store
                                       ;K=400000000 takes 28m21  with MORK, out of mem with predicate store
                                       ;K=500000000 out of mem   with MORK, out of mem with predicate store
-                 (mork_add-atom &mork (friend sam $x)))
+                 (add-atom &mork (friend sam $x)))
       (empty))
 
 
 !(let $temp (let $x (range 1 100000)
-                 (mork_match &mork (friend $y $x) (friend $y $x)))
+                 (match &mork (friend $y $x) (friend $y $x)))
       (empty))
 
 !(let $temp (let $x (range 1 100000)
-                 (mork_match &mork (friend $y $x) (friend $y $x)))
+                 (match &mork (friend $y $x) (friend $y $x)))
       (empty))
 
 !(let $temp (let $x (range 1 100000)
-                 (mork_match &mork (friend $y $x) (friend $y $x)))
+                 (match &mork (friend $y $x) (friend $y $x)))
       (empty))
