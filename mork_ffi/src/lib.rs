@@ -68,7 +68,7 @@ pub extern "C" fn rust_mork(command: *const c_char, input: *const c_char) -> *mu
         // Load more S-exprs into the existing Space
         let space = get_space();
         let res = {
-            let mut s = match space.lock() { Ok(g) => g, Err(_) => { 
+            let mut s = match space.lock() { Ok(g) => g, Err(_) => {
                 return CString::new("ERR: space poisoned").unwrap().into_raw();
             }};
             s.load_all_sexpr(inp.as_bytes())
@@ -79,11 +79,17 @@ pub extern "C" fn rust_mork(command: *const c_char, input: *const c_char) -> *mu
         };
         handled = true;
     }
-    else if cmd.eq_ignore_ascii_case("dump") {
+    else if cmd.eq_ignore_ascii_case("exec") {
         // Lightweight probe that proves we can access the global space
         // (Replace with whatever Space inspection you prefer)
-        out = "OK: space alive".to_string();
-        handled = true;
+        //s.metta_calculus(1);
+        let space = get_space();
+        let mut s = match space.lock() { Ok(g) => g, Err(_) => {
+                return CString::new("ERR: space poisoned").unwrap().into_raw();
+            }};
+        s.metta_calculus(1);
+        //out = "OK: space alive".to_string();
+        //handled = true;
     }
     else if cmd.eq_ignore_ascii_case("getatoms") {
         out = "space geting queried:".to_string();
