@@ -4,6 +4,9 @@
 ;;
 ;; Zar: Mostly written by Nil @ https://github.com/ngeiswei/chaining/blob/metamath-xt/experimental/metamath/demo0.metta
 ;; I prefer expanded variable names :-p
+;;
+;; Nil: In the hard version, the major premise of modus ponens comes
+;; first to speed up proof search.
 
 ;;;;;;;;;
 ;; Nat ;;
@@ -463,10 +466,12 @@
 ;;     $( Define the modus ponens inference rule. $)
 ;;     mp $a |- Q $.
 ;;   $}
-!(add-atom &kbh (: mp (-> (: $P ⟨wff⟩)
+;;
+;; The major premise appears first to speed up proof search.
+!(add-atom &kbh (: mp (-> (: $maj (⟨->⟩ $P $Q))
+                          (: $P ⟨wff⟩)
                           (: $Q ⟨wff⟩)
                           (: $min $P)
-                          (: $maj (⟨->⟩ $P $Q))
                           $Q)))
 
 ;;;;;;;;;;;
@@ -513,31 +518,14 @@
   (: (⟨=⟩ ⟨t⟩ ⟨t⟩) ⟨wff⟩))
 
 ;; Prove that if t + 0 = t, then t = t
-;;
-;; Warning: searching for the whole proof takes too long so it is only
-;; verified.
-;;
-;; As a reference of comparison, providing a partial proof such as
-;;
-;;         (mp (⟨=⟩ (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩)
-;;             (⟨->⟩ (⟨=⟩ (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩) (⟨=⟩ ⟨t⟩ ⟨t⟩))
-;;             $z
-;;             $w)
-;;
-;; takes 2 minutes with the hyperon experimental backend.  So
-;; searching for the entire proof would probably take hours if not
-;; days.
 !(test
   (bc &kbh (fromNumber 4)
-      (: (mp (⟨=⟩ (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩)
-             (⟨->⟩ (⟨=⟩ (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩) (⟨=⟩ ⟨t⟩ ⟨t⟩))
-             (a2 ⟨t⟩)
-             (a1 (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩ ⟨t⟩))
+      (: $prf
          (⟨->⟩ (⟨=⟩ (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩) (⟨=⟩ ⟨t⟩ ⟨t⟩))))
-  (: (mp (⟨=⟩ (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩)
+  (: (mp (a1 (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩ ⟨t⟩)
+         (⟨=⟩ (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩)
          (⟨->⟩ (⟨=⟩ (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩) (⟨=⟩ ⟨t⟩ ⟨t⟩))
-         (a2 ⟨t⟩)
-         (a1 (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩ ⟨t⟩))
+         (a2 ⟨t⟩))
      (⟨->⟩ (⟨=⟩ (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩) (⟨=⟩ ⟨t⟩ ⟨t⟩))))
 
 ;; Informal description:
@@ -563,23 +551,18 @@
 ;;     tt tze tpl tt weq tt tt weq tt a2 tt tze tpl tt weq tt tze tpl tt weq tt tt
 ;;     weq wim tt a2 tt tze tpl tt tt a1 mp mp $.
 ;;
-;; Warning: searching for the whole proof takes too long so it is only
-;; verified.
+;; Benchmarks (AMD Ryzen 9 5950X):
+;; - PeTTa: 93ms
+;; - HE: 4m40.962s
 !(test
   (bc &kbh (fromNumber 5)
-      (: (mp (⟨=⟩ (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩)
-             (⟨=⟩ ⟨t⟩ ⟨t⟩)
-             (a2 ⟨t⟩)
-             (mp (⟨=⟩ (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩)
-                 (⟨->⟩ (⟨=⟩ (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩) (⟨=⟩ ⟨t⟩ ⟨t⟩))
-                 (a2 ⟨t⟩)
-                 (a1 (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩ ⟨t⟩)))
+      (: $prf
          (⟨=⟩ ⟨t⟩ ⟨t⟩)))
-  (: (mp (⟨=⟩ (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩)
-         (⟨=⟩ ⟨t⟩ ⟨t⟩)
-         (a2 ⟨t⟩)
-         (mp (⟨=⟩ (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩)
+  (: (mp (mp (a1 (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩ ⟨t⟩)
+             (⟨=⟩ (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩)
              (⟨->⟩ (⟨=⟩ (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩) (⟨=⟩ ⟨t⟩ ⟨t⟩))
-             (a2 ⟨t⟩)
-             (a1 (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩ ⟨t⟩)))
+             (a2 ⟨t⟩))
+         (⟨=⟩ (⟨+⟩ ⟨t⟩ ⟨0⟩) ⟨t⟩)
+         (⟨=⟩ ⟨t⟩ ⟨t⟩)
+         (a2 ⟨t⟩))
      (⟨=⟩ ⟨t⟩ ⟨t⟩)))
