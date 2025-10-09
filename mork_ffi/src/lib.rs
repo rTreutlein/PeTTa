@@ -77,30 +77,35 @@ pub extern "C" fn rust_mork(command: *const c_char, input: *const c_char) -> *mu
         };
         handled = true;
     }
-    else if cmd.eq_ignore_ascii_case("exec") {
-        // Lightweight probe that proves we can access the global space
-        // (Replace with whatever Space inspection you prefer)
-        //s.metta_calculus(1);
+    else if cmd.eq_ignore_ascii_case("exec")
+    {
         let space = get_space();
-        let mut s = match space.lock() { Ok(g) => g, Err(_) => {
+        let mut s = match space.lock() { Ok(g) => g, Err(_) =>
+        {
                 return CString::new("ERR: space poisoned").unwrap().into_raw();
-            }};
-        s.metta_calculus(1);
-        //out = "OK: space alive".to_string();
-        //handled = true;
+        }};
+        let num: usize = match inp.trim().parse()
+        {
+            Ok(n) => n,
+            Err(_) => 1,
+        };
+        s.metta_calculus(num);
     }
-    else if cmd.eq_ignore_ascii_case("getatoms") {
+    else if cmd.eq_ignore_ascii_case("getatoms")
+    {
         out = "space geting queried:".to_string();
         let space = get_space();
         let res = {
-            let guard = match space.lock() {
+            let guard = match space.lock()
+            {
                 Ok(g) => g,
                 Err(_) => return CString::new("ERR: space poisoned").unwrap().into_raw(),
             };
             let s: &Space = &*guard;
             let mut buf: Vec<u8> = Vec::new();
             // Dump every expression as S-expr into buf
-            match s.dump_all_sexpr(&mut buf) {
+            match s.dump_all_sexpr(&mut buf)
+            {
                 Ok(_)  => String::from_utf8(buf).map_err(|_| "utf8 decode failed".to_string()),
                 Err(e) => Err(format!("dump error: {e:?}")),
             }
@@ -108,10 +113,12 @@ pub extern "C" fn rust_mork(command: *const c_char, input: *const c_char) -> *mu
         out = res.unwrap_or_else(|e| format!("ERR: {e}"));
         handled = true;
     }
-    else if cmd.eq_ignore_ascii_case("query") {
+    else if cmd.eq_ignore_ascii_case("query")
+    {
         let space = get_space();
         let res = {
-            let guard = match space.lock() {
+            let guard = match space.lock()
+            {
                 Ok(g) => g,
                 Err(_) => return CString::new("ERR: space poisoned").unwrap().into_raw(),
             };
@@ -125,15 +132,18 @@ pub extern "C" fn rust_mork(command: *const c_char, input: *const c_char) -> *mu
         out = res.unwrap_or_else(|e| format!("ERR: {e}"));
         handled = true;
     }
-    if !handled {
+    if !handled
+    {
         out = inp.to_string();
     }
     CString::new(out).unwrap().into_raw()
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_string_free(ptr: *mut c_char) {
-    if !ptr.is_null() {
+pub extern "C" fn rust_string_free(ptr: *mut c_char)
+{
+    if !ptr.is_null()
+    {
         unsafe { drop(CString::from_raw(ptr)); }
     }
 }
