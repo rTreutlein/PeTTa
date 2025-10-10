@@ -22,20 +22,13 @@ fn get_space() -> &'static Mutex<Space>
     })
 }
 
-pub fn parse_sexpr(r: &[u8], buf: *mut u8) -> Result<(Expr, usize), ParserError> {
-    let space = get_space();
-    let mut s = match space.lock() {
-        Ok(g) => g,
-        Err(_) => panic!("Space poisoned"),
-    };
-
+pub fn parse_sexpr(s: &Space, r: &[u8], buf: *mut u8) -> Result<(Expr, usize), ParserError> {
     let mut it = Context::new(r);
     let mut parser = ParDataParser::new(&s.sm);
     let mut ez = ExprZipper::new(Expr { ptr: buf });
-
-    parser.sexpr(&mut it, &mut ez)
-        .map(|_| (Expr { ptr: buf }, ez.loc))
+    parser.sexpr(&mut it, &mut ez).map(|_| (Expr { ptr: buf }, ez.loc))
 }
+
 
 // Optional explicit (re)init helper if you want to override contents.
 fn init_space() -> Result<(), String>
@@ -128,27 +121,30 @@ pub extern "C" fn rust_mork(command: *const c_char, input: *const c_char) -> *mu
         out = res.unwrap_or_else(|e| format!("ERR: {e}"));
         handled = true;
     }
-    else if cmd.eq_ignore_ascii_case("query")
-    {
+    else if cmd.eq_ignore_ascii_case("query") {
         let space = get_space();
         let res = {
-            let guard = match space.lock()
-            {
+            let guard = match space.lock() {
                 Ok(g) => g,
                 Err(_) => return CString::new("ERR: space poisoned").unwrap().into_raw(),
             };
             let s: &Space = &*guard;
+            // ---- Parse the input string into an Expr ----
+            let mut vbuf = [0u8; 4096];
+            let (parsed_expr, used) = match parse_sexpr(s, inp.as_bytes(), vbuf.as_mut_ptr()) {
+                Ok(ok) => ok,
+                Err(_) => return CString::new("ERR: parse failed").unwrap().into_raw(),
+            };
+            // ---- Now dump the query result ----
             let mut v: Vec<u8> = Vec::new();
-            // pattern from `inp`, project `_1`
-            let (e, used) = parse_sexpr(inp.as_bytes(), v.as_mut_ptr()).unwrap();
-            let _written: usize = s.dump_sexpr(e, expr!(s, "$V1"), &mut v);
-            
-            
-            
-            // Convert to UTF-8 String
-            String::from_utf8(v).map_err(|_| "utf8 decode failed".to_string())
+            let _written: usize = s.dump_sexpr(parsed_expr, parsed_expr, &mut v);
+            // ---- Convert to UTF-8 ----
+            match String::from_utf8(v) {
+                Ok(s) => s,
+                Err(_) => return CString::new("ERR: utf8 decode failed").unwrap().into_raw(),
+            }
         };
-        out = res.unwrap_or_else(|e| format!("ERR: {e}"));
+        out = res;
         handled = true;
     }
     if !handled
