@@ -10,6 +10,7 @@
 
 !(add-atom &mork (exec 0 (, (friend sam $x))
                          (, (freund sam $x))))
+
 !(mm2-exec &mork 1)
 
 !(test (length (collapse (match &mork (freund sam $x) (freund sam $x)))) 99999)
