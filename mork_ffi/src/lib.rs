@@ -12,7 +12,7 @@ use mork_bytestring::{item_byte, Tag, Expr, ExprZipper};
 // ---------- Global space (init once) ----------
 static GLOBAL_SPACE: OnceLock<Mutex<Space>> = OnceLock::new();
 
-#[inline]
+//Get it in the commands with a mutex:
 fn get_space() -> &'static Mutex<Space>
 {
     GLOBAL_SPACE.get_or_init(||
@@ -22,21 +22,11 @@ fn get_space() -> &'static Mutex<Space>
     })
 }
 
-pub fn parse_sexpr(s: &Space, r: &[u8], buf: *mut u8) -> Result<(Expr, usize), ParserError> {
+fn parse_sexpr(s: &Space, r: &[u8], buf: *mut u8) -> Result<(Expr, usize), ParserError> {
     let mut it = Context::new(r);
     let mut parser = ParDataParser::new(&s.sm);
     let mut ez = ExprZipper::new(Expr { ptr: buf });
     parser.sexpr(&mut it, &mut ez).map(|_| (Expr { ptr: buf }, ez.loc))
-}
-
-
-// Optional explicit (re)init helper if you want to override contents.
-fn init_space() -> Result<(), String>
-{
-    let space = get_space();
-    let mut s = space.lock().map_err(|_| "space poisoned")?;
-    *s = Space::new();
-    Ok(())
 }
 
 // ---------- FFI ----------
@@ -61,16 +51,7 @@ pub extern "C" fn rust_mork(command: *const c_char, input: *const c_char) -> *mu
     let _ = get_space();
     let mut out = String::new();
     let mut handled = false;
-    // ---- commands that use/affect the global Space ----
-    if cmd.eq_ignore_ascii_case("init") {
-        // Reinitialize global Space with provided S-exprs
-        match init_space() {
-            Ok(_)  => out = "OK: space (re)initialized".to_string(),
-            Err(e) => out = format!("ERR: {e}"),
-        }
-        handled = true;
-    }
-    else if cmd.eq_ignore_ascii_case("load") {
+    if cmd.eq_ignore_ascii_case("load") {
         // Load more S-exprs into the existing Space
         let space = get_space();
         let res = {
