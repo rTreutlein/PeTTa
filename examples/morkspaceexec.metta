@@ -9,7 +9,8 @@
       (empty))
 
 !(add-atom &mork (exec 0 (, (friend sam $x))
-                         (, (freund sam $x))))
+                         (O (- (friend sam $x))
+                            (+ (freund sam $x)))))
 
 !(mm2-exec &mork 1)
 
