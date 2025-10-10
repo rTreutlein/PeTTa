@@ -3,11 +3,11 @@ use std::os::raw::c_char;
 use std::sync::{Mutex, OnceLock};
 use std::collections::{BTreeSet, HashSet};
 use std::time::Instant;
-use mork_frontend::bytestring_parser::Parser;
+use mork_frontend::bytestring_parser::{Parser, ParserError, Context};
 use mork::{expr, prefix, sexpr};
 use mork::prefix::Prefix;
-use mork::space::{transitions, unifications, writes, Space};
-use mork_bytestring::{item_byte, Tag};
+use mork::space::{transitions, unifications, writes, Space, ParDataParser};
+use mork_bytestring::{item_byte, Tag, Expr, ExprZipper};
 
 // ---------- Global space (init once) ----------
 static GLOBAL_SPACE: OnceLock<Mutex<Space>> = OnceLock::new();
@@ -20,6 +20,21 @@ fn get_space() -> &'static Mutex<Space>
         let mut s = Space::new();
         Mutex::new(s)
     })
+}
+
+pub fn parse_sexpr(r: &[u8], buf: *mut u8) -> Result<(Expr, usize), ParserError> {
+    let space = get_space();
+    let mut s = match space.lock() {
+        Ok(g) => g,
+        Err(_) => panic!("Space poisoned"),
+    };
+
+    let mut it = Context::new(r);
+    let mut parser = ParDataParser::new(&s.sm);
+    let mut ez = ExprZipper::new(Expr { ptr: buf });
+
+    parser.sexpr(&mut it, &mut ez)
+        .map(|_| (Expr { ptr: buf }, ez.loc))
 }
 
 // Optional explicit (re)init helper if you want to override contents.
@@ -125,7 +140,11 @@ pub extern "C" fn rust_mork(command: *const c_char, input: *const c_char) -> *mu
             let s: &Space = &*guard;
             let mut v: Vec<u8> = Vec::new();
             // pattern from `inp`, project `_1`
-            let _written: usize = s.dump_sexpr(expr!(s, inp), expr!(s, "_1"), &mut v);
+            let (e, used) = parse_sexpr(inp.as_bytes(), v.as_mut_ptr()).unwrap();
+            let _written: usize = s.dump_sexpr(e, expr!(s, "$V1"), &mut v);
+            
+            
+            
             // Convert to UTF-8 String
             String::from_utf8(v).map_err(|_| "utf8 decode failed".to_string())
         };
