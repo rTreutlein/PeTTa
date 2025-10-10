@@ -51,7 +51,7 @@ pub extern "C" fn rust_mork(command: *const c_char, input: *const c_char) -> *mu
     let _ = get_space();
     let mut out = String::new();
     let mut handled = false;
-    if cmd.eq_ignore_ascii_case("load") {
+    if cmd.eq_ignore_ascii_case("add-atoms") {
         // Load more S-exprs into the existing Space
         let space = get_space();
         let res = {
@@ -66,7 +66,7 @@ pub extern "C" fn rust_mork(command: *const c_char, input: *const c_char) -> *mu
         };
         handled = true;
     }
-    else if cmd.eq_ignore_ascii_case("exec")
+    else if cmd.eq_ignore_ascii_case("mm2-exec")
     {
         let space = get_space();
         let mut s = match space.lock() { Ok(g) => g, Err(_) =>
@@ -80,7 +80,7 @@ pub extern "C" fn rust_mork(command: *const c_char, input: *const c_char) -> *mu
         };
         s.metta_calculus(num);
     }
-    else if cmd.eq_ignore_ascii_case("getatoms")
+    else if cmd.eq_ignore_ascii_case("get-atoms")
     {
         out = "space geting queried:".to_string();
         let space = get_space();
@@ -102,7 +102,7 @@ pub extern "C" fn rust_mork(command: *const c_char, input: *const c_char) -> *mu
         out = res.unwrap_or_else(|e| format!("ERR: {e}"));
         handled = true;
     }
-    else if cmd.eq_ignore_ascii_case("query") {
+    else if cmd.eq_ignore_ascii_case("match") {
         let space = get_space();
         let res = {
             let guard = match space.lock() {
