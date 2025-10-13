@@ -33,7 +33,7 @@ var_symbol(V,E0,E) --> "$", token(Cs), { atom_chars(N, Cs), ( memberchk(N-V0, E0
 %Atoms are derived from tokens: now also handles numbers to prevent splitting
 atom_symbol(A) --> token(Cs), { string_codes("\"", [Q]), ( Cs = [Q|_] -> append([Q|Body], [Q], Cs), %"str" as string
                                                                          string_codes(A, Body)
-                                                                       ; number_codes(N, Cs) -> A = N         %Try as number first
+                                                                       ; catch(number_codes(N, Cs), _, fail) -> A = N         %Try as number first (gracefully)
                                                                        ; atom_codes(R, Cs),                  %Else as atom
                                                                          ( R = 'True' -> A = true
                                                                                        ; R = 'False'
