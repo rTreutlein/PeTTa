@@ -17,10 +17,9 @@ sread(S,T) :- atom_string(A,S),
               atom_codes(A,Cs),
               phrase(sexpr(T,[],_), Cs).
 
-%An S-Expression is a parentheses-nesting of S-Expressions that are either numbers, variables, sttrings, or atoms:
+%An S-Expression is a parentheses-nesting of S-Expressions that are either variables, strings, or atoms (including numbers):
 sexpr(S,E,E)  --> blanks, string_lit(S), blanks, !.
 sexpr(T,E0,E) --> blanks, "(", blanks, seq(T,E0,E), blanks, ")", blanks, !.
-sexpr(N,E,E)  --> blanks, number(N), blanks, !.
 sexpr(V,E0,E) --> blanks, var_symbol(V,E0,E), blanks, !.
 sexpr(A,E,E)  --> blanks, atom_symbol(A), blanks.
 
@@ -31,10 +30,11 @@ seq([],E,E)       --> [].
 %Variables start with $, and keep track of them: re-using exising Prolog variables for variables of same name:
 var_symbol(V,E0,E) --> "$", token(Cs), { atom_chars(N, Cs), ( memberchk(N-V0, E0) -> V=V0, E=E0 ; V=_, E=[N-V|E0] ) }.
 
-%Atoms are derived from tokens:
+%Atoms are derived from tokens: now also handles numbers to prevent splitting
 atom_symbol(A) --> token(Cs), { string_codes("\"", [Q]), ( Cs = [Q|_] -> append([Q|Body], [Q], Cs), %"str" as string
                                                                          string_codes(A, Body)
-                                                                       ; atom_codes(R, Cs),         %others are atoms
+                                                                       ; number_codes(N, Cs) -> A = N         %Try as number first
+                                                                       ; atom_codes(R, Cs),                  %Else as atom
                                                                          ( R = 'True' -> A = true
                                                                                        ; R = 'False'
                                                                                          -> A = false
