@@ -2,13 +2,9 @@ use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::sync::{Mutex, OnceLock};
-use std::collections::{BTreeSet, HashSet};
-use std::time::Instant;
 use mork_frontend::bytestring_parser::{Parser, ParserError, Context};
-use mork::{expr, prefix, sexpr};
-use mork::prefix::Prefix;
-use mork::space::{transitions, unifications, writes, Space, ParDataParser};
-use mork_bytestring::{item_byte, Tag, Expr, ExprZipper};
+use mork::space::{Space, ParDataParser};
+use mork_expr::{Expr, ExprZipper};
 
 //S-Expression parsing:
 static GLOBAL_SPACE: OnceLock<Mutex<Space>> = OnceLock::new();
@@ -57,8 +53,23 @@ pub extern "C" fn rust_mork(command: *const c_char, input: *const c_char) -> *mu
                     return;
                 }
             };
-            //Load S-exprs into the existing Space
-            match s.load_all_sexpr(inp.as_bytes()) {
+            //Add S-exprs into the existing Space
+            match s.add_all_sexpr(inp.as_bytes()) {
+                Ok(_)  => out_static = "OK: loaded",
+                Err(_) => out_static = "ERR: load failed",
+            }
+            result_ptr = CString::new(out_static).unwrap().into_raw();
+        }
+        else if cmd.eq_ignore_ascii_case("remove-atoms") {
+            let mut s = match space.lock() {
+                Ok(g) => g,
+                Err(_) => {
+                    result_ptr = CString::new("ERR: space poisoned").unwrap().into_raw();
+                    return;
+                }
+            };
+            //Remove S-exprs from the existing Space
+            match s.remove_all_sexpr(inp.as_bytes()) {
                 Ok(_)  => out_static = "OK: loaded",
                 Err(_) => out_static = "ERR: load failed",
             }

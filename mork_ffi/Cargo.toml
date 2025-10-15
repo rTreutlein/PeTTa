@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 mork-frontend = { path = "../../MORK/frontend" }
-mork-bytestring = { path = "../../MORK/experiments/expr/bytestring" }
+mork-expr = { path = "../../MORK/expr" }
 mork = { path = "../../MORK/kernel" }
 
 [lib]
