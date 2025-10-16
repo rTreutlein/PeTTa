@@ -112,6 +112,8 @@ subtract(Pred, [E|T], D, R) :- ( member_with_pred(E, D, Pred) -> subtract(Pred, 
                                                                ; R = [E|R1],
                                                                  subtract(Pred, T, D, R1) ).
 
+unique(List, Unique) :- list_to_set(==, List, Unique).
+
 %%% Higher-order predicates: %%%
 'fold-flat'([], Acc, _Combiner, Acc).
 'fold-flat'([Head|Tail], Acc, Combiner, Result) :- call(Combiner, Acc, Head, NewAcc),  % Apply Combiner(Acc, Head, NewAcc)
