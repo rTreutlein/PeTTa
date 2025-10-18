@@ -198,7 +198,7 @@ unregister_fun(N/Arity) :- retractall(fun(N)),
 :- maplist(register_fun, [superpose, empty, let, 'let*', '+','-','*','/', '%', min, max,
                           '<','>','==', '=', '=?', '<=', '>=', and, or, not, sqrt, exp, log, cos, sin,
                           'car-atom', 'cdr-atom', repr, 'println!', 'readln!', 'trace!', test, assertEqual,
-                          append, length, sort, msort, memberfast, excludefast, maplist, unique,
+                          append, length, sort, msort, memberfast, excludefast, maplist, unique, list_to_set,
                           'add-atom', 'remove-atom', 'get-atoms', match, 'is-var', 'is-expr', 'get-mettatype',
                           decons, 'fold-flat', 'fold-nested', 'map-flat', 'map-nested', union, intersection, subtract,
                           unify, 'py-call', 'get-type', 'get-metatype', '=alpha','=@=', concat, sread, cons, reverse]).
