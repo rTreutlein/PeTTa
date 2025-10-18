@@ -10,24 +10,20 @@ goals_list_to_conj([], true)      :- !.
 goals_list_to_conj([G], G)        :- !.
 goals_list_to_conj([G|Gs], (G,R)) :- goals_list_to_conj(Gs, R).
 
-%Extract arguments or superpose arguments as list:
-arg_to_list([superpose|T], T) :- !.
-arg_to_list(A, [A]).
-
 % Runtime dispatcher: call F if it's a registered fun/1, else keep as list:
 reduce(F, Args, Out) :- ( nonvar(F), atom(F), fun(F) -> append(Args, [Out], CallArgs),
                                                         Goal =.. [F|CallArgs],
                                                         call(Goal)
                                                       ; Out = [F|Args] ).
 
-translate_expr_to_conj(Input, Conj, Out) :-
-    translate_expr(Input, Goals, Out),
-    goals_list_to_conj(Goals, Conj).
+%Combined expr translation to goals list
+translate_expr_to_conj(Input, Conj, Out) :- translate_expr(Input, Goals, Out),
+                                            goals_list_to_conj(Goals, Conj).
 
 %Turn MeTTa code S-expression into goals list:
 translate_expr(X, [], X)          :- (var(X) ; atomic(X)), !.
 translate_expr([H|T], Goals, Out) :-
-        !, translate_expr(H, GsH, HV),
+        translate_expr(H, GsH, HV),
         ( HV == superpose, T = [Args], is_list(Args) -> build_superpose_branches(Args, Out, Branches),
                                                         disj_list(Branches, Disj),
                                                         append(GsH, [Disj], Goals)
@@ -43,7 +39,7 @@ translate_expr([H|T], Goals, Out) :-
                                                   append(GsH, Gk, G0),
                                                   append(G0, [IfGoal], Goals)
         ; HV == sealed, T = [Vars, Expr] -> translate_expr_to_conj(Expr, Con, Out),
-                                           Goals = [copy_term(Vars,Con,_,Ncon),Ncon]
+                                            Goals = [copy_term(Vars,Con,_,Ncon),Ncon]
         ; HV == let, T = [Pat, Val, In] -> translate_expr(Pat, Gp, P),
                                            translate_expr(Val, Gv, V),
                                            translate_expr(In,  Gi, I),

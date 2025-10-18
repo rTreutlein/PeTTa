@@ -13,5 +13,8 @@ main :- current_prolog_flag(argv, Args),
                      ; Args = [File|_],
                        load_metta_file(File,default),
                        findall(R, run(default,R), Results),
-                       format("~w~n", [Results]) ),
+                       maplist(swrite, Results, Strings),
+                       format("~w~n", [Strings]) ),
         halt.
+
+:- initialization(main, main).

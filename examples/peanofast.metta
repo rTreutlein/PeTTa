@@ -3,11 +3,11 @@
    (if (== $n 0)
        done
        (let $temp1 (add-atom &self (num $expression))
-            (expandK (Z $expression) (- $n 1)))))
+            (expandK (S $expression) (- $n 1)))))
 
 ;Peano demo:
 (= (demo-peano $K)
-   (let $g (expandK Z $K)
-        (match &self (num $1) $1)))
+   (expandK Z $K))
 
-!(test (length (collapse (demo-peano 1000))) 1000)
+!(demo-peano 2500)
+!(test (length (collapse (match &self (num $1) $1))) 2500)
