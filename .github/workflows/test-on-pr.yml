@@ -8,6 +8,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest  # Uses GitHub's Linux runner; change to macos-latest or windows-latest if needed
+    container:
+      image: swipl:latest
 
     steps:
       - name: Checkout code
