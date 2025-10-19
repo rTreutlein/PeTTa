@@ -7,9 +7,9 @@
 
 ;However that can be done too:
 (= (eval $body)
-   (let* (($a    (add-atom &self (= (myfunc) $body)))
-          ($res  (myfunc))
-          ($r    (remove-atom &self (= (myfunc) $body))))
+   (let* (($a   (add-atom &self (= (myfunc) $body)))
+          ($res (myfunc))
+          ($r   (remove-atom &self (= (myfunc) $body))))
          $res))
 
 !(test (eval (match &self (= (f (42) 40.7 2) $x) $x))
