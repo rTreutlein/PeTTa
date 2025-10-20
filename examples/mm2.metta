@@ -5,23 +5,23 @@
        (empty)))
 
 ;Execute sinks:
-(= (SINKexec ()) True)
-(= (SINKexec $sink)
+(= (MM2_ApplyRuleBody ()) True)
+(= (MM2_ApplyRuleBody $sink)
    (let* (($headop (car-atom $sink))
           ($rest (cdr-atom $sink)))
          (and (case $headop
                     (((＋ $inside) (add-atom &PLUS $inside))
                      ((－ $inside) (add-atom &MINUS $inside))
                      (($Else)     (add-atom &PLUS $inside))))
-              (SINKexec $rest))))
+              (MM2_ApplyRuleBody $rest))))
 
-;
+;MM2 space transform based on (Head Body) rewrite rule expression
 (= (MM2 $expression)
    (let ($source $sink) $expression
         (let* (($a (collapse (let $sink (match &self $source $sink)
                                   (if (or (== O (car-atom $sink))
                                           (== , (car-atom $sink)))
-                                      (SINKexec (cdr-atom $sink))
+                                      (MM2_ApplyRuleBody (cdr-atom $sink))
                                       (nope)))))
                ($b (collapse (let $x (get-atoms &PLUS)
                                   (add-atom-no-duplicate &self $x))))
