@@ -138,5 +138,8 @@
 !(let* (($i (range 0 16))
         ($a (MM2 (step 0)))
         ($b (MM2 (step 1)))
-        ($c (MM2 (step 2))))
-       (println! (spacecount)))
+        ($c (MM2 (step 2)))
+        ($t (println! (spacecount))))
+       (empty))
+
+!(test (spacecount) 16314)
