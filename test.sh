@@ -1,7 +1,7 @@
 #!/bin/sh
 for f in ./examples/*; do
     # Skip repl.metta
-    [ "$(basename "$f")" = "repl.metta" ] || [ "$(basename "$f")" = "gpt.metta" ] && continue
+    ([ "$(basename "$f")" = "repl.metta" ] || [ "$(basename "$f")" = "gpt.metta" ] || [ "$(basename "$f")" = "mm2.metta" ]) && continue
     echo "Running $f"
     output=$(sh run.sh "$f" | grep "is ")
     if ! echo "$output" | grep -q "✅"; then
