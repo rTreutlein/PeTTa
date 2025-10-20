@@ -10,15 +10,17 @@
    (let* (($headop (car-atom $sink))
           ($rest (cdr-atom $sink)))
          (and (case $headop
-                    (((＋ $inside) (add-atom &PLUS $inside))
-                     ((－ $inside) (add-atom &MINUS $inside))
-                     (($Else)     (add-atom &PLUS $inside))))
+                    (((＋ $inside) (add-atom-no-duplicate &PLUS $inside))
+                     ((－ $inside) (add-atom-no-duplicate &MINUS $inside))
+                     (($Else)     (add-atom-no-duplicate &PLUS $inside))))
               (MM2_ApplyRuleBody $rest))))
 
 ;MM2 space transform based on (Head Body) rewrite rule expression
 (= (MM2 $expression)
    (let ($source $sink) $expression
-        (let* (($a (collapse (let $sink (match &self $source $sink)
+        (let* (($zero1 (add-atom &PLUS (dummy)))  ;needed for now until dynamic dispatch
+               ($zero2 (add-atom &MINUS (dummy))) ;checks arity too (planned extension)
+               ($a (collapse (let $sink (match &self $source $sink)
                                   (if (or (== O (car-atom $sink))
                                           (== , (car-atom $sink)))
                                       (MM2_ApplyRuleBody (cdr-atom $sink))
@@ -31,7 +33,7 @@
                                   (remove-atom &MINUS $z))))
                ($s (collapse (let $w (get-atoms &PLUS)
                                   (remove-atom &PLUS $w)))))
-               true)))
+              true)))
 
 ;Generator: (separate non-det return of each item)
 (= (range $K $N)
