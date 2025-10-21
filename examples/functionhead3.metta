@@ -1,8 +1,7 @@
-(= (trueOnly $x True) $x)
-(= (trueOnly $x False) (empty))
+(= (qualify $x True) $x)
 
 (= (in $x $L)
-   (trueOnly $x (memberfast $x $L)))
+   (qualify $x (memberfast $x $L)))
 
 (= (myplus (in $X (1 2 3)) 
            (in $Y (2 3)))
