@@ -18,3 +18,5 @@
 !(test (collapse (myplus $x 3)) (4 5))
 ;what can be reached when adding $X to $Y:
 !(test (collapse (myplus $x $y)) (3 4 4 5 5))
+;With which $x added to 2 can we reach values above 3 with myplus?
+!(test (collapse (qualify $x (> (myplus $x 2) 3))) (2 3))
