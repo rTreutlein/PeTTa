@@ -1,10 +1,6 @@
 (= (trueOnly $x True) $x)
 (= (trueOnly $x False) (empty))
 
-(= (member $x ()) False)
-(= (member $x (. $x $Tail)) True)
-   
-
 (= (in $x $L)
    (trueOnly $x (memberfast $x $L)))
 
