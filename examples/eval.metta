@@ -5,7 +5,7 @@
 ;Match does not automatically interpret the returned pattern as code:
 ;!(match &self (= (f 40.7 2) $x) $x)
 
-;But we can eval after it if we desire (invoke translator.pl and calls the translated goals):
+;But we can eval after it if we desire (invokes translator.pl and calls the translated goals):
 !(test (eval (match &self (= (f (42) 40.7 2) $x) $x))
        (42.7 42))
 
