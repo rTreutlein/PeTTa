@@ -24,3 +24,5 @@
 ;same as in the old formulation:
 !(test (h_old (42 10 40) 42000)
        ((40) 42000))
+
+;Check out functionhead2.metta!
