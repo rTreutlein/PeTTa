@@ -13,5 +13,7 @@
 !(test (collapse (myplus 3 3)) ())
 ;input out of range:
 !(test (collapse (myplus 3 4)) ())
-;what can be reached when $X to 3:
+;what can be reached when adding $X to 3:
 !(test (collapse (myplus $x 3)) (4 5))
+;what can be reached when adding $X to $Y:
+!(test (collapse (myplus $x $y)) (3 4 4 5 5))
