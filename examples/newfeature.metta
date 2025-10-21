@@ -5,12 +5,15 @@
 ;Match does not automatically interpret the returned pattern as code:
 ;!(match &self (= (f 40.7 2) $x) $x)
 
-;However that can be done too:
-(= (eval $body)
+!(test (eval (match &self (= (f (42) 40.7 2) $x) $x))
+       (42.7 42))
+
+;Additionally we can emulate eval by using add-atom and remove-atom (not recommended):
+(= (evalCustom $body)
    (let* (($a   (add-atom &self (= (myfunc) $body)))
           ($res (myfunc))
           ($r   (remove-atom &self (= (myfunc) $body))))
          $res))
 
-!(test (eval (match &self (= (f (42) 40.7 2) $x) $x))
+!(test (evalCustom (match &self (= (f (42) 40.7 2) $x) $x))
        (42.7 42))
