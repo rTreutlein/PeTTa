@@ -1,3 +1,4 @@
+;Check out functionhead2.metta!
 (= (qualify $x True) $x)
 
 (= (in $x $L)

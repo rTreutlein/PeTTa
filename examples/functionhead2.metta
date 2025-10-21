@@ -1,3 +1,4 @@
+;Check out functionhead.metta!
 (= (living garfield) True)
 (= (being garfield) True)
 (= (small garfield) True)
@@ -20,3 +21,4 @@
 
 !(test (msort (collapse (cat $X)))
        (cat42 garfield))
+;Check out functionhead3.metta!
