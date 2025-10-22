@@ -179,18 +179,18 @@
 (= (bfs_loop (queue () ()) $Vs $N0) $N0)
 (= (bfs_loop $Q $Vs $N0)
    (let* (($Q1 (dequeue $S $Q))
-          ($t  (cut)) ;no need for tracking choicepoints here
-          ($L  (collapse (let* (($Snew (move $S $_))
+          ($ct (cut)) ;no need for tracking choicepoints here
+          ($Ln (collapse (let* (($Snew (move $S $_))
                                 ($2 (if (nb_hashtbl_get $Vs $Snew) (empty) ok))
                                 ($3 (nb_hashtbl_put $Vs $Snew true)))
                                $Snew)))
-          ($Q2 (foldl enqueue $L $Q1))
+          ($Q2 (foldl enqueue $Ln $Q1))
           ($N1 (+ $N0 1)))
          (bfs_loop $Q2 $Vs $N1)))
 
 (= (bfs_all $Start)
    (let* (($Vs (empty_nb_hashtbl))
-          ($P  (nb_hashtbl_put $Vs $Start true))
+          ($Pt (nb_hashtbl_put $Vs $Start true))
           ($Q1 (enqueue $Start (queue () ()))))
         (bfs_loop $Q1 $Vs 0)))
 
