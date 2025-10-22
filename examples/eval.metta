@@ -12,7 +12,7 @@
 ;Additionally we can emulate eval by using add-atom and remove-atom (not recommended):
 (= (evalCustom $body)
    (let* (($a   (add-atom &self (= (myfunc) $body)))
-          ($res (myfunc))
+          ($res (reduce (myfunc)))
           ($r   (remove-atom &self (= (myfunc) $body))))
          $res))
 

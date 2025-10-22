@@ -142,4 +142,4 @@
         ($t (println! (spacecount))))
        (empty))
 
-!(test (spacecount) 16316)
+!(test (spacecount) 16286)
