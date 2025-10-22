@@ -191,8 +191,7 @@
 (= (bfs_all $Start)
    (let* (($Vs (empty_nb_hashtbl))
           ($P  (nb_hashtbl_put $Vs $Start true))
-          ($Q0 (queue () ()))
-          ($Q1 (enqueue $Start $Q0)))
+          ($Q1 (enqueue $Start (queue () ()))))
         (bfs_loop $Q1 $Vs 0)))
 
 !(test (let $x (bfs_all (___ 1 2 3 4 5 6 7 8)) $x) 181440)
