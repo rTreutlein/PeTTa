@@ -199,7 +199,7 @@
          (bfs_loop $Q2 $Vs $N1)))
 
 (= (bfs_all $Start)
-   (let* (($Vs &vs) ;(empty_nb_hashtbl))
+   (let* (($Vs &vs)
           ($Pt (PutIn $Vs $Start))
           ($Q1 (enqueue $Start (queue () ()))))
         (bfs_loop $Q1 $Vs 0)))
