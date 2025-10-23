@@ -182,7 +182,7 @@
             True
             (empty))))
 
-(= (putin $space $item)
+(= (PutIn $space $item)
    (let $st (s (repra $item))
         (add-atom $space $st)))
 
@@ -192,7 +192,7 @@
           ($ct (cut)) ;no need for tracking choicepoints here
           ($Ln (collapse (let* (($Snew (move $S $_))
                                 ($2 (ProceedOnlyIfNotIn $Vs $Snew))
-                                ($3 (putin $Vs $Snew)))
+                                ($3 (PutIn $Vs $Snew)))
                                $Snew)))
           ($Q2 (foldl enqueue $Ln $Q1))
           ($N1 (+ $N0 1)))
@@ -200,7 +200,7 @@
 
 (= (bfs_all $Start)
    (let* (($Vs &vs) ;(empty_nb_hashtbl))
-          ($Pt (putin $Vs $Start))
+          ($Pt (PutIn $Vs $Start))
           ($Q1 (enqueue $Start (queue () ()))))
         (bfs_loop $Q1 $Vs 0)))
 
