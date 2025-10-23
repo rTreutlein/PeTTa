@@ -188,8 +188,7 @@
 
 (= (bfs_loop (queue () ()) $Vs $N0) $N0)
 (= (bfs_loop $Q $Vs $N0)
-   (let* (($Q1 (dequeue $S $Q))
-          ($ct (cut)) ;no need for tracking choicepoints here
+   (let* (($Q1 (once (dequeue $S $Q)))
           ($Ln (collapse (let* (($Snew (move $S $_))
                                 ($2 (ProceedOnlyIfNotIn $Vs $Snew))
                                 ($3 (PutIn $Vs $Snew)))
