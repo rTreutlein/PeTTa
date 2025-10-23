@@ -167,13 +167,13 @@
     $_7 ___ $_8))
 
 (= (enqueue $E (queue $In $Out))
-   (queue (. $E $In) $Out))
+   (queue (cons $E $In) $Out))
 
-(= (dequeue $E (queue $In (. $E $Out)))
+(= (dequeue $E (queue $In (cons $E $Out)))
    (queue $In $Out))
 
 (= (dequeue $E (queue $In ()))
-   (let (. $E $R) (reverse $In)
+   (let (cons $E $R) (reverse $In)
         (queue () $R)))
 
 (= (ProceedOnlyIfNotIn $space $item)

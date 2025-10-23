@@ -5,7 +5,7 @@
    (append ((#+ $X $Z)) $Y))
 
 ;List destructuring:
-!(test (let (. $Head $Tail) (1 2 3 4 5 6) ($Head $Tail))
+!(test (let (cons $Head $Tail) (1 2 3 4 5 6) ($Head $Tail))
             (1 (2 3 4 5 6)))
 
 ;But instead it works for any relational functions:
