@@ -134,7 +134,6 @@
              (O (＋ (new $state)) (＋ (some todo)) )))
 
 !(import! &self mm2)
-!(add-atom &self (dummy))
 !(let* (($i (range 0 16)) ;26 to generate all > 180K options (1h runtime on M4 processor)
         ($a (MM2 (step 0)))
         ($b (MM2 (step 1)))
@@ -142,4 +141,4 @@
         ($t (println! (spacecount))))
        (empty))
 
-!(test (spacecount) 16286)
+!(test (spacecount) 16290)
