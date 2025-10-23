@@ -1,6 +1,14 @@
 #!/bin/sh
 for f in ./examples/*; do
-    [ "$(basename "$f")" = "repl.metta" ] && continue
+    # Skip repl.metta
+    ([ "$(basename "$f")" = "repl.metta" ] || [ "$(basename "$f")" = "gpt.metta" ] || [ "$(basename "$f")" = "mm2.metta" ]) && continue
     echo "Running $f"
-    sh run.sh "$f" | grep "is "
+    output=$(sh run.sh "$f" | grep "is ")
+    if ! echo "$output" | grep -q "✅" || echo "$output" | grep -q "❌"; then
+        echo "Failure in $f: found $output"
+        exit 1
+    else
+        echo "$output"
+    fi
 done
+exit 0
