@@ -195,14 +195,7 @@
                                 ($3 (putin $Vs $Snew)))
                                $Snew)))
           ($Q2 (foldl enqueue $Ln $Q1))
-          ($N1 (+ $N0 1))
-          
-          ($_P (if (== 0 (% $N1 10000))
-                       ((println! "Discovered ~w states...")
-                        (println! $N1))
-                       True))
-          
-          )
+          ($N1 (+ $N0 1)))
          (bfs_loop $Q2 $Vs $N1)))
 
 (= (bfs_all $Start)
