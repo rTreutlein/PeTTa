@@ -15,3 +15,9 @@
 !(mm2-exec &mork 1)
 
 !(test (length (collapse (match &mork (freund sam $x) (freund sam $x)))) 99999)
+
+!(test (collapse (let (freund sam $u) (match &mork (freund sam $x) (freund sam $x))
+                      (if (> $u 99994)
+                          $u
+                          (empty))))
+       (99995 99996 99997 99998 99999))

@@ -25,6 +25,18 @@ fn parse_sexpr(s: &Space, r: &[u8], buf: &mut [u8]) -> Result<(Expr, usize), Par
     parser.sexpr(&mut it, &mut ez).map(|_| (Expr { ptr: buf.as_mut_ptr() }, ez.loc))
 }
 
+//Expects `sexpr` to be a tuple `(<pattern> <template>)`
+fn dump_sexpr<W :std::io::Write>(s: &Space, sexpr : &str, parsebuf : &mut[u8], outbuf : &mut W ) -> Result<usize, ParserError> {
+    let (qexpr, _used) = parse_sexpr(&s, sexpr.as_bytes(), parsebuf)?;
+    let mut ez = ExprZipper::new(qexpr);
+    assert!( ez.next_child() );
+    let pattern =ez.subexpr();
+    assert!( ez.next_child() );
+    let template = ez.subexpr();
+    assert!( !ez.next_child() );
+    Ok(s.dump_sexpr(pattern, template, outbuf))
+}
+
 //Foreign Funcion Interface:
 #[no_mangle]
 pub extern "C" fn rust_mork(command: *const c_char, input: *const c_char) -> *mut c_char {
@@ -121,7 +133,7 @@ pub extern "C" fn rust_mork(command: *const c_char, input: *const c_char) -> *mu
             };
             outbuf.clear();
             //Now dump the query results into the outbut buffer:
-            s.dump_sexpr(qexpr, qexpr, &mut *outbuf);
+            dump_sexpr(&s, inp, &mut parsebuf, &mut *outbuf);
             let text = unsafe { std::str::from_utf8_unchecked(&outbuf) };
             result_ptr = CString::new(text).unwrap().into_raw();
         }
