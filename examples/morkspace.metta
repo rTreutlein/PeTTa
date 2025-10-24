@@ -1,5 +1,6 @@
 ;makes example fail without MORK:
 !(mm2-exec &mork 1)
+
 ;generator: (separate non-det return of each item)
 (= (range $K $N)
    (if (< $K $N)
