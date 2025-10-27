@@ -7,3 +7,6 @@
 !(test (match &self (= (addreduct) $X) (quote $X)) (4))
 
 !(get-type 1)
+
+(: a A)
+!(test (get-type-space &self a) A)

@@ -43,9 +43,6 @@
 (= (for-each-in-atom $L $f)
    (map-flat $L $f))
 
-(= (is-function (-> $A $B)) (let $temp (cut) True))
-(= (is-function $X) False)
-
 (: evalc (-> Expression %Undefined% %Undefined%))
 (= (evalc $expression &self)
    (eval $expression))
@@ -58,3 +55,10 @@
 (: noreduce-eq (-> Expression Expression Bool))
 (= (noreduce-eq $A $B)
    (== $A $B))
+
+;Types
+(= (is-function (-> $A $B)) (let $temp (cut) True))
+(= (is-function $X) False)
+
+(= (get-type-space &self $x)
+   (get-type $x))
