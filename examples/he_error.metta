@@ -1,12 +1,5 @@
-(= (if-error $X $A $B)
-   (if (== (car-atom $X) Error) 
-       $A $B))
+!(import! &self lib_he)
 
-(= (return-on-error $result $B)
-   (if-error $result
-             $result
-             $B))
-               
 !(test (let $result (catch (+ 40 2))
        (if-error $result
            Error
