@@ -26,14 +26,13 @@
              $result
              $B))
 
-
 (= (match-types $A $B $Then $Else)
    (if (== $A $B) $Then $Else))
 
 (= (match-type-or $value $type1 $type2)
    (match-types $type1 $type2 True $value))
 
-(: add-reduct (-> Atom Expression Bool))
+(: add-reduct (-> %Undefined% Expression Bool))
 (= (add-reduct $space $f)
    (let* (($headbody (cdr-atom $f))
           ($head (car-atom $headbody))
@@ -50,7 +49,7 @@
 
 ;Quoting
 
-(: unquote (-> Expression Atom))
+(: unquote (-> Expression %Undefined%))
 (= (unquote (quote $A))
    (let $temp (cut) (eval $A)))
 
