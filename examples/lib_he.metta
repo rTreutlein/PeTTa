@@ -33,6 +33,7 @@
 (= (match-type-or $value $type1 $type2)
    (match-types $type1 $type2 True $value))
 
+(: add-reduct (-> Atom Expression Bool))
 (= (add-reduct $space $f)
    (let* (($headbody (cdr-atom $f))
           ($head (car-atom $headbody))
@@ -46,3 +47,13 @@
 
 (= (is-function (-> $A $B)) (let $temp (cut) True))
 (= (is-function $X) False)
+
+;Quoting
+
+(: unquote (-> Expression Atom))
+(= (unquote (quote $A))
+   (let $temp (cut) (eval $A)))
+
+(: noreduce-eq (-> Expression Expression Bool))
+(= (noreduce-eq $A $B)
+   (== $A $B))

@@ -1,7 +1,7 @@
 !(import! &self lib_he)
 
 !(add-atom &self (= (addnormal) (+ 1 3)))
-!(add-reduct &self (quote (= (addreduct) (+ 1 3))))
+!(add-reduct &self (= (addreduct) (+ 1 3)))
 
 !(test (match &self (= (addnormal) $X) $X) (quote (+ 1 3)))
 !(test (match &self (= (addreduct) $X) (quote $X)) (4))
