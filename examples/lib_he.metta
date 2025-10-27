@@ -46,6 +46,10 @@
 (= (is-function (-> $A $B)) (let $temp (cut) True))
 (= (is-function $X) False)
 
+(: evalc (-> Expression %Undefined% %Undefined%))
+(= (evalc $expression &self)
+   (eval $expression))
+
 ;Quoting
 (: unquote (-> Expression %Undefined%))
 (= (unquote (quote $A))
