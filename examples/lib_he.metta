@@ -3,7 +3,6 @@
 ; straightforward to express directly in MeTTa itself:
 
 ;Equality and Reduction
-
 (= (if-equal $A $B $Then $Else)
    (if (== $A $B) $Then $Else))
 
@@ -48,7 +47,6 @@
 (= (is-function $X) False)
 
 ;Quoting
-
 (: unquote (-> Expression %Undefined%))
 (= (unquote (quote $A))
    (let $temp (cut) (eval $A)))
