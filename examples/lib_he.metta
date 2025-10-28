@@ -43,7 +43,7 @@
           ($head (car-atom $headbody))
           ($body (cdr-atom $headbody))
           ($bodyreduced (eval $body)))
-        (add-atom $space (= $head $bodyreduced))))
+         (add-atom $space (= $head $bodyreduced))))
 
 ;Evaluation control
 (= (for-each-in-atom $L $f)
