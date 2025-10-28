@@ -47,7 +47,7 @@
 
 ;Evaluation control
 (= (for-each-in-atom $L $f)
-   (map-flat $L $f))
+   (map-atom $L $f))
 
 (: evalc (-> Expression %Undefined% %Undefined%))
 (= (evalc $expression &self)
