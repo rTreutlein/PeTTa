@@ -1,6 +1,5 @@
 !(import! &self lib_he)
 
-!(pragma! interpreter bare-minimal)
 (= (div $x $y $accum)
    (chain (eval (- $x $y)) $r1
      (chain (eval (< $r1 0)) $r2
