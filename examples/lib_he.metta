@@ -15,6 +15,12 @@
 (= (assertAlphaEqual $A $B)
    (assert (=alpha $A $B)))
 
+(: unify (-> Expression Expression Expression Expression %Undefined%))
+(= (unify $a $b $then $else)
+   (if (= $a $b)
+       (eval $then)
+       (eval $else)))
+
 ;Error Handling
 (= (if-error $X $A $B)
    (if (== (car-atom $X) Error) 

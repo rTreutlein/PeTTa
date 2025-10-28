@@ -6,7 +6,7 @@ for f in ./examples/*; do
             continue ;;
     esac
     echo "Running $f"
-    output=$(sh run.sh "$f" | grep "is ")
+    output=$(sh run.sh "$f" | grep "is " | grep " should ")
     if ! echo "$output" | grep -q "✅" || echo "$output" | grep -q "❌"; then
         echo "Failure in $f: found $output"
         exit 1
