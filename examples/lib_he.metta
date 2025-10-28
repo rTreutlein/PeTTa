@@ -56,7 +56,7 @@
 ;Quoting
 (: unquote (-> Expression %Undefined%))
 (= (unquote (quote $A))
-   (let $temp (cut) (eval $A)))
+   (eval $A))
 
 (: noreduce-eq (-> Expression Expression Bool))
 (= (noreduce-eq $A $B)
