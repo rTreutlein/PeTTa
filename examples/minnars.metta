@@ -81,7 +81,7 @@
 (= (Truth_Induction $T1 $T2)
    (Truth_Abduction $T2 $T1))
 
-(= (Truth_Exemplification (stv $f1 stv $c1) 
+(= (Truth_Exemplification (stv $f1 $c1)
                           (stv $f2 $c2))
    (stv 1.0 (Truth_w2c (* (* $f1 $f2) (* $c1 $c2)))))
 
