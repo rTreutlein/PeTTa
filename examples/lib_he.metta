@@ -21,6 +21,14 @@
        (eval $then)
        (eval $else)))
 
+(: add-reduct (-> %Undefined% Expression Bool))
+(= (add-reduct $space $f)
+   (let* (($headbody (cdr-atom $f))
+          ($head (car-atom $headbody))
+          ($body (cdr-atom $headbody))
+          ($bodyreduced (eval $body)))
+         (add-atom $space (= $head $bodyreduced))))
+
 ;Error Handling
 (= (if-error $X $A $B)
    (if (== (car-atom $X) Error) 
@@ -30,20 +38,6 @@
    (if-error $result
              $result
              $B))
-
-(= (match-types $A $B $Then $Else)
-   (if (== $A $B) $Then $Else))
-
-(= (match-type-or $value $type1 $type2)
-   (match-types $type1 $type2 True $value))
-
-(: add-reduct (-> %Undefined% Expression Bool))
-(= (add-reduct $space $f)
-   (let* (($headbody (cdr-atom $f))
-          ($head (car-atom $headbody))
-          ($body (cdr-atom $headbody))
-          ($bodyreduced (eval $body)))
-        (add-atom $space (= $head $bodyreduced))))
 
 ;Evaluation control
 (= (for-each-in-atom $L $f)
@@ -68,3 +62,9 @@
 
 (= (get-type-space &self $x)
    (get-type $x))
+
+(= (match-types $A $B $Then $Else)
+   (if (== $A $B) $Then $Else))
+
+(= (match-type-or $value $type1 $type2)
+   (match-types $type1 $type2 True $value))
