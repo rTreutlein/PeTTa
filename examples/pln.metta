@@ -112,6 +112,9 @@
 
 ;; Truth functions
 
+;Forward declaration
+(= (STV $stv) (empty))
+
 ; Deduction formula: PLN book "1.4 Truth-value Formulas", page 15:
 ; borrowed from https://github.com/trueagi-io/hyperon-pln/blob/main/metta/pln/dependent-types/DeductionDTL.metta
 (= (Truth_Deduction (stv $Ps $Pc)
