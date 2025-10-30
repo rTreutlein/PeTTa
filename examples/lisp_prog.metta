@@ -1,4 +1,4 @@
-!(import! &self lib_lisp)
+!(import! &self ../lib/lib_lisp)
 
 !(test (progn (add-atom &self (friend sam tom))
               (remove-atom &self (friend sam tom))

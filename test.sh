@@ -1,9 +1,8 @@
 #!/bin/sh
 for f in ./examples/*; do
     base=$(basename "$f")
-    case "$base" in
-        repl.metta|gpt.metta|mm2.metta|lib_*.metta)
-            continue ;;
+    case "$base" in repl.metta|gpt.metta|mm2.metta)
+        continue ;;
     esac
     echo "Running $f"
     output=$(sh run.sh "$f" | grep "is " | grep " should ")

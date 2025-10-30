@@ -1,3 +1,5 @@
+!(import! &self ../lib/lib_mm2)
+
 (move (___ $_2 $_3
        $_4 $_5 $_6
        $_7 $_8 $_9) R ($_2 ___ $_3
@@ -133,7 +135,6 @@
 (= (step 2) ((, (new_reachable $state) )
              (O (＋ (new $state)) (＋ (some todo)) )))
 
-!(import! &self lib_mm2)
 !(let* (($i (range 0 16)) ;26 to generate all > 180K options (15 min runtime on M4 processor)
         ($a (MM2 (step 0)))
         ($b (MM2 (step 1)))
