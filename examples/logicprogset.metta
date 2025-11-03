@@ -3,4 +3,5 @@
              (member b $M))
         (== (size-atom $M) 3)))
 
-!(test (let $constraint (once (myf $M)) $M) (a b))
+!(test (let $constraint (once (myf $M)) $M)
+       (a b))
