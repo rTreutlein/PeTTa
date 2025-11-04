@@ -10,3 +10,9 @@
 
 !(test (applyL1) 3)
 !(test (applyL2) 9)
+
+!(test (maplist (\ ($a) -> (+ 1 $a)) (1 2 3))
+       (2 3 4))
+
+!(test ((\ ($acc $e) -> (or (== 1 $e) $acc)) False 1)
+        True)
