@@ -12,7 +12,5 @@
 !(test (get-type-space &self a) A)
 
 (hello world)
-(hello world)
-(hello world)
 !(test (unify &self (hello world) Yes No) Yes)
 !(test (unify &self (hello dream) Yes No) No)
