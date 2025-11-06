@@ -21,7 +21,7 @@ jobs:
       - name: Install gcc
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: gcc
+          packages: cmake gcc
           version: 1.0
 
       - name: Set up Python
