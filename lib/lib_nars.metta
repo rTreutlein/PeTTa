@@ -1,6 +1,3 @@
-(= (clamp $v $min $max)
-   (min $max (max $v $min)))
-
 ;; Truth functions
 (= (Truth_c2w $c)
    (/ $c (- 1 $c)))
@@ -174,13 +171,13 @@
 (= (|- ($B $T1) ((==> $A $B) $T2)) ($A (Truth_Abduction $T1 $T2)))
 
 ;;How many derivation steps (task selections)
-(= (PLN.Config.MaxSteps) 100)
+(= (NARS.Config.MaxSteps) 100)
 
 ;;Size of active tasks PQ
-(= (PLN.Config.TaskQueueSize) 10)
+(= (NARS.Config.TaskQueueSize) 10)
 
 ;;Max beliefs buffer size
-(= (PLN.Config.BeliefQueueSize) 100)
+(= (NARS.Config.BeliefQueueSize) 100)
 
 ;;Whether evidence was just counted once
 (= (StampDisjoint $Ev1 $Ev2)
@@ -221,7 +218,7 @@
             (LimitSize (exclude-item $lowestPriorityItem $L) $size))))
 
 ;;Priority-queue based task ranking deriver with belief buffer
-(= (PLN.Derive $Tasks $Beliefs $steps $maxsteps $taskqueuesize $beliefqueuesize)
+(= (NARS.Derive $Tasks $Beliefs $steps $maxsteps $taskqueuesize $beliefqueuesize)
    (if (or (> $steps $maxsteps) (== $Tasks ()))
        ($Tasks $Beliefs)
        (let (Sentence $x $Ev1) (BestCandidate PriorityRank () $Tasks)
@@ -235,67 +232,38 @@
                                                  (empty)))
                                        (case (|- $x) ((($T3 $TV3) (Sentence ($T3 $TV3) $Ev1)))))))
                  (let $temp (trace! (SELECTED $steps (Sentence $x $Ev1)) 42)
-                            (PLN.Derive (LimitSize (exclude-item (Sentence $x $Ev1) (list_to_set (append $Tasks $derivations))) $taskqueuesize)
-                                        (LimitSize (list_to_set (append $Beliefs $derivations)) $beliefqueuesize)
-                                        (+ $steps 1)
-                                        $maxsteps
-                                        $taskqueuesize
-                                        $beliefqueuesize))))))
+                            (NARS.Derive (LimitSize (exclude-item (Sentence $x $Ev1) (list_to_set (append $Tasks $derivations))) $taskqueuesize)
+                                         (LimitSize (list_to_set (append $Beliefs $derivations)) $beliefqueuesize)
+                                         (+ $steps 1)
+                                         $maxsteps
+                                         $taskqueuesize
+                                         $beliefqueuesize))))))
 
-(= (PLN.Derive $Tasks $Beliefs $maxsteps $taskqueuesize $beliefqueuesize)
-   (PLN.Derive $Tasks $Beliefs 1 $maxsteps $taskqueuesize $beliefqueuesize))
+(= (NARS.Derive $Tasks $Beliefs $maxsteps $taskqueuesize $beliefqueuesize)
+   (NARS.Derive $Tasks $Beliefs 1 $maxsteps $taskqueuesize $beliefqueuesize))
 
-(= (PLN.Derive $Tasks $Beliefs $maxsteps)
-   (PLN.Derive $Tasks $Beliefs $maxsteps (PLN.Config.TaskQueueSize) (PLN.Config.BeliefQueueSize)))
+(= (NARS.Derive $Tasks $Beliefs $maxsteps)
+   (NARS.Derive $Tasks $Beliefs $maxsteps (NARS.Config.TaskQueueSize) (NARS.Config.BeliefQueueSize)))
 
-(= (PLN.Derive $Tasks $Beliefs)
-   (PLN.Derive $Tasks $Beliefs (PLN.Config.MaxSteps)))
+(= (NARS.Derive $Tasks $Beliefs)
+   (NARS.Derive $Tasks $Beliefs (NARS.Config.MaxSteps)))
 
 ;;Candidate evaluation based on confidence
 (= (ConfidenceRank ((stv $f $c) $Ev)) $c)
 (= (ConfidenceRank ()) 0)
 
 ;;Pose a question of a certain term to the system on some knowledge base
-(= (PLN.Query $Tasks $Beliefs $term $maxsteps $taskqueuesize $beliefqueuesize)
-   (BestCandidate ConfidenceRank () (collapse (let ($TasksRet $BeliefsRet) (PLN.Derive $Tasks $Beliefs $maxsteps $taskqueuesize $beliefqueuesize)
+(= (NARS.Query $Tasks $Beliefs $term $maxsteps $taskqueuesize $beliefqueuesize)
+   (BestCandidate ConfidenceRank () (collapse (let ($TasksRet $BeliefsRet) (NARS.Derive $Tasks $Beliefs $maxsteps $taskqueuesize $beliefqueuesize)
                                                    (case (superpose $BeliefsRet)
                                                          (((Sentence ($Term $TV) $Ev) (case (== $Term $term)
                                                                                             ((True ($TV $Ev)))))))))))
 
-(= (PLN.Query $kb $term $maxsteps $taskqueuesize $beliefqueuesize)
-   (PLN.Query $kb $kb $term $maxsteps $taskqueuesize $beliefqueuesize))
+(= (NARS.Query $kb $term $maxsteps $taskqueuesize $beliefqueuesize)
+   (NARS.Query $kb $kb $term $maxsteps $taskqueuesize $beliefqueuesize))
 
-(= (PLN.Query $kb $term $maxsteps)
-   (PLN.Query $kb $term $maxsteps (PLN.Config.TaskQueueSize) (PLN.Config.BeliefQueueSize))) ;default space bound
+(= (NARS.Query $kb $term $maxsteps)
+   (NARS.Query $kb $term $maxsteps (NARS.Config.TaskQueueSize) (NARS.Config.BeliefQueueSize))) ;default space bound
 
-(= (PLN.Query $kb $term)
-   (PLN.Query $kb $term (PLN.Config.MaxSteps))) ;default steps bound
-
-(= (kb)
-   ((Sentence ((==> (--> (× $1 $2) friend)
-                    (==> (--> $1 ([] smokes))
-                         (--> $2 ([] smokes))))
-               (stv 0.4 0.9)) (1))
-    (Sentence ((==> (--> $1 ([] smokes))
-                    (--> $1 ([] cancerous)))
-               (stv 0.6 0.9)) (2))
-    (Sentence ((--> (× Anna Bob) friend)
-               (stv 1.0 0.9)) (3))
-    (Sentence ((--> (× Anna Edward) friend)
-               (stv 1.0 0.9)) (4))
-    (Sentence ((--> (× Anna Frank) friend)
-               (stv 1.0 0.9)) (5))
-    (Sentence ((--> (× Edward Frank) friend)
-               (stv 1.0 0.9)) (6))
-    (Sentence ((--> (× Gary Helen) friend)
-               (stv 1.0 0.9)) (7))
-    (Sentence ((--> (× Gary Frank) friend)
-               (stv 0.0 0.9)) (8))
-    (Sentence ((--> Anna ([] smokes))
-               (stv 1.0 0.9)) (9))
-    (Sentence ((--> Edward ([] smokes))
-               (stv 1.0 0.9)) (10))))
-
-!(test (PLN.Query (kb)
-                  (--> Edward ([] cancerous)))
-       ((stv 0.6 0.48941156079382964) (2 5 6 9 10)))
+(= (NARS.Query $kb $term)
+   (NARS.Query $kb $term (NARS.Config.MaxSteps))) ;default steps bound
