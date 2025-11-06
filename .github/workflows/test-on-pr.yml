@@ -18,6 +18,12 @@ jobs:
       - name: Run test script
         run: sh test.sh  # Executes your shell script; assumes it's in the repo root
 
+      - name: Install gcc
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: gcc
+          version: 1.0
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
