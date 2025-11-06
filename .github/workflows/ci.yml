@@ -45,17 +45,7 @@ jobs:
           echo "image=ghcr.io/${REPO}/swipl-ci" >> $GITHUB_OUTPUT
           echo "tag=pr-${{ github.event.number }}" >> $GITHUB_OUTPUT
 
-      - name: Decide if we can push (fork PRs cannot)
-        id: push-flag
-        run: |
-          if [ "${{ github.event.pull_request.head.repo.fork }}" = "true" ]; then
-            echo "push=false" >> $GITHUB_OUTPUT
-          else
-            echo "push=true" >> $GITHUB_OUTPUT
-          fi
-
       - name: Login to GHCR
-        if: steps.push-flag.outputs.push == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -71,7 +61,7 @@ jobs:
           context: .
           file: .github/ci/Dockerfile
           tags: ${{ steps.compute.outputs.image }}:${{ steps.compute.outputs.tag }}
-          push: ${{ steps.push-flag.outputs.push }}
+          push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -89,7 +79,7 @@ jobs:
         run: |
           REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           DEFAULT="ghcr.io/${REPO}/swipl-ci:latest"
-          if [ "${{ needs.build-image.result }}" = "success" ] && [ "${{ needs.build-image.outputs.pushed }}" = "true" ]; then
+          if [ "${{ needs.build-image.result }}" = "success" ]; then
             echo "image=${{ needs.build-image.outputs.image }}:${{ needs.build-image.outputs.tag }}" >> $GITHUB_OUTPUT
           else
             echo "image=$DEFAULT" >> $GITHUB_OUTPUT
