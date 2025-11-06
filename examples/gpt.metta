@@ -8,10 +8,9 @@
 (= (py-str $L) (py-str-helper $L ""))
 
 ;Evaluate expression via py-call:
-(: py-call (-> Expression %Undefined%))
 (= (py-eval $str)
    (let $dict (py-call (dict))
-        (py-call (eval $str $dict $dict))))
+        (py-call (quote (eval $str $dict $dict)))))
 
 ;Add to builtins a function that can call functions via keyword arguments
 !(py-eval "setattr(__import__('builtins'),'apply_kwargs',(lambda f,d: f(**d))) or 0")
