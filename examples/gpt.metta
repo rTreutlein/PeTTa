@@ -1,7 +1,3 @@
-;Empty Python dictionary
-(= (emptydict)
-   (py-call (dict)))
-
 ;Create string by appending the list entries
 (= (py-str-helper () $outp) $outp)
 (= (py-str-helper $L $outp)
@@ -11,10 +7,16 @@
      (py-str-helper $tail $outp2)))
 (= (py-str $L) (py-str-helper $L ""))
 
+;Evaluate expression via py-call:
+(: py-call (-> Expression %Undefined%))
+(= (py-eval $str)
+   (let $dict (py-call (dict))
+        (py-call (eval $str $dict $dict))))
+
 ;Add to builtins a function that can call functions via keyword arguments
-!(py-call (eval "setattr(__import__('builtins'),'apply_kwargs',(lambda f,d: f(**d))) or 0" (emptydict)))
+!(py-eval "setattr(__import__('builtins'),'apply_kwargs',(lambda f,d: f(**d))) or 0")
 ;Add to builtins a function that can access by index:
-!(py-call (eval "setattr(__import__('builtins'),'index', (lambda o,i: o[i])) or 0" (emptydict)))
+!(py-eval "setattr(__import__('builtins'),'index', (lambda o,i: o[i])) or 0")
 
 ;Function to prompt GPT via OpenAI API:
 (= (useGPT $prompt)
@@ -22,7 +24,7 @@
           ($responses (py-call (getattr $client "responses")))
           ($create    (py-call (getattr $responses "create")))
           ($mydict    (py-str  ("{'model':'gpt-5','input':\"" $prompt "\"}")))
-          ($kwargs    (py-call (eval $mydict (emptydict) (emptydict))))
+          ($kwargs    (once (py-eval $mydict)))
           ($res       (py-call (builtins.apply_kwargs $create $kwargs)))
           ($output    (py-call (getattr $res "output")))
           ($outmsg    (py-call (builtins.index $output 1))) ;0 is ResponseReasoningItem
