@@ -26,7 +26,7 @@ jobs:
   # 2) Build & (optionally) push a PR image only if Dockerfile changed
   build-image:
     needs: changes
-    if: github.event_name == 'pull_request' && needs.changes.outputs.dockerfile == 'true'
+    if: github.event_name == 'pull_request' && needs.changes.outputs.dockerfile == 'true' && github.event.pull_request.head.repo.fork == 'false'
     runs-on: ubuntu-latest
     permissions:
       contents: read
