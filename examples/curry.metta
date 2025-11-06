@@ -13,5 +13,4 @@
 
 !(test ((h 42) (1 2 3)) (42 1 2 3))
 !(test (repr (h 42)) "(partial h (42))")
-
 !(test (map-atom (1 2 3) (+ 1)) (2 3 4))
