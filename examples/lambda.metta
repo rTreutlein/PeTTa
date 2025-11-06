@@ -29,8 +29,9 @@
        (42 43 44))
 
 (= (myfunc2 $mylambda)
-   ($mylambda 3 4))
+   ($mylambda 43 44))
 
-!(let $k 100
-      (let $lambda (|-> ($x $y) (42 $x $y $k))
-      (myfunc2 $lambda)))
+!(test (let* (($k 45)
+              ($lambda (|-> ($x $y) (42 $x $y $k))))
+             (myfunc2 $lambda))
+       (42 43 44 45))
