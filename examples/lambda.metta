@@ -17,7 +17,7 @@
        (2 3 4))
 
 !(test ((|-> ($acc $e) (or (== 1 $e) $acc)) False 1)
-        True)
+       True)
 
 (= (myfunc $a $b) (cons $a $b))
 
