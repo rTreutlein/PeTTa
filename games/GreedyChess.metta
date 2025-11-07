@@ -102,7 +102,7 @@
 ;   5) tuning and more sophisticated moves of all types
 ;
 
-!(import! &self lib/lib_lisp)                  ; needed for 'progn'
+!(import! &self ../lib/lib_lisp)                  ; needed for 'progn'
 
 ;*******************************************************
 ; Global type definitions
