@@ -26,4 +26,4 @@
 (= (gen) 2)
 (= (gen) 3)
 
-!(test (fold (|-> ($x $y) (+ $x $y)) (gen) 0.0) 6)
+!(test (fold (|-> ($x $y) (+ $x $y)) (gen) 0) 6)
