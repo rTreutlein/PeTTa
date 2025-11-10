@@ -23,3 +23,7 @@
 !(test (f1b) 10)
 !(test (f2b) (2 3 4))
 !(test (f3b) (4 5))
+
+
+(= (foldfun2 $a $b) (append $a $b))
+!(foldl-atom ((1 2) (3 4) (5 6)) () $acc $x (append $acc $x))

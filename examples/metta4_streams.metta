@@ -6,15 +6,14 @@
        (superpose ($K (range (+ $K 1) $N)))
        (empty)))
 
-;add every range item to space &s1 using metta4's for:
-!(for (range 1 5)
-      (|-> ($x) 
-           (add-atom &s1 (num $x))))
+;add every range item to space &s1 using metta4's for, an item returning false "breaks" the loopo:
+!(forall (range 1 5)
+         (|-> ($x)
+              (add-atom &s1 (num $x)))) ;shortcuts when one returns false
 
-;add first range item to space &s1 using metta4's for:
-!(sel (range 1 5)
-      (|-> ($x)
-           (add-atom &s2 (num $x))))
+;Add only one commited option: (select)
+!(let $x (once (range 1 5))
+         (add-atom &s2 (num $x)))
 
 !(test (collapse (get-atoms &s1))
        ((num 1) (num 2) (num 3) (num 4)))
@@ -26,4 +25,7 @@
 (= (gen) 2)
 (= (gen) 3)
 
-!(test (fold (|-> ($x $y) (+ $x $y)) (gen) 0) 6)
+!(test (foldall (|-> ($x $y) (+ $x $y)) (gen) 0) 6)
+
+!(42)
+!(collapse (get-atoms &s2))
