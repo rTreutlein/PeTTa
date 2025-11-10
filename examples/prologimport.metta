@@ -52,7 +52,7 @@
 !(assertaPredicate (Predicate (hello world)))
 
 ;Let's query our predicate:
-!(let $temp (callPredicate (Predicate (hello $what))) 42)
+!(test (let $temp (callPredicate (Predicate (hello $what))) $what) world)
 
 ;Let's suppose it is in function convention:
 !(import_prolog_function hello)
