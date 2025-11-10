@@ -27,5 +27,3 @@
 
 !(test (foldall (|-> ($x $y) (+ $x $y)) (gen) 0) 6)
 
-!(42)
-!(collapse (get-atoms &s2))
