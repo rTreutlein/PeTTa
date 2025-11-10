@@ -1,3 +1,5 @@
+;%%% FILE LOADING, REGEX MANIPULATION, PROCESS METTA STRING %%%
+
 ;Loading a Prolog builtin predicate that follows function form convention:
 !(import_prolog_function re_replace)
 
@@ -23,7 +25,9 @@
 ;Do our own call:
 !(test (fib 10) 55)
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;%%% HIJACK PROLOG CONSULT TO LOAD PREDICATES AS FUNCTIONS %%%
 
 ;Let's allow us to use Prolog's consult and import_prolog_function in combination to import functions from a pl file:
 !(import_prolog_function consult)
@@ -37,7 +41,9 @@
 ;Test it too:
 !(test (myfunc 41) 42)
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;%%% DIRECTLY WORK WITH PREDICATES AND PREDICATE AS FUNCTION
 
 ;Let's go further, we want to define a Prolog clause as MeTTa S-expressions and assert it:
 (: Predicate (-> Expression %Undefined%))
@@ -53,6 +59,10 @@
 
 ;Meaning (hello) evaluates to world:
 !(test (hello) world)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;%%% DIRECTLY WORK WITH CLAUSES AND CLAUSE AS FUNCTION
 
 ;Let's build a clause instead of just a predicate:
 (= (myAddPred) (let* (($InputPlus1Predicate (Predicate (+ $Input 1)))
@@ -74,7 +84,9 @@
 ;So we can call it more elegantly:
 !(test (myAdd 140) 142)
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;%%% METTA FUNCTION AS PREDICATE/CLAUSE
 
 ;Of course this also goes the other way, from MeTTa function:
 (= (myAddMeTTa $x) (+ $x 1))
