@@ -1,8 +1,6 @@
 ;Check out functionhead2.metta!
-(= (qualify $x True) $x)
-
 (= (in $x $L)
-   (qualify $x (is-member $x $L)))
+   (let True (is-member $x $L) $x))
 
 (= (myplus (in $X (1 2 3)) 
            (in $Y (2 3)))
