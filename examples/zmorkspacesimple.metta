@@ -4,5 +4,5 @@
 !(~> (, (friend sam $x))
         (O (- (friend sam $x))
            (+ (enemy sam $x))))
-!(? (enemy sam $x) $x)
-;tim
+!(test (? (enemy sam $x) $x)
+       tim)
