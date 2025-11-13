@@ -15,3 +15,11 @@
 (= (p1 $x) (+ 1 $x))
 
 !(test (map-flat3 (p1 (1 2))) (2 3))
+
+(= (wrapper $f $list) (map-flat $f $list))
+
+!(test (wrapper (+ 1) (1 2 3)) (2 3 4))
+
+(= (wrapper2 $f) (id $f))
+
+!(test (wrapper2 (+ 1)) (+ 1))
