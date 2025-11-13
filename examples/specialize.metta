@@ -28,3 +28,11 @@
 
 !(test (trickyspec (+ 4)) 5)
 !(test (trickyspec (+ 1)) 3)
+
+(= (fold-nested $f $init ()) $init)
+(= (fold-nested $f $init (cons $x $xs))
+      (if (is-expr $x)
+        (fold-nested $f (fold-nested $f $init $x) $xs)
+        (fold-nested $f ($f $init $x) $xs)))
+
+!(test (fold-nested + 0 (1 (2 3))) 6)
