@@ -1,10 +1,10 @@
 (= (map-flat $f ()) ())
 (= (map-flat $f (cons $x $xs)) (cons ($f $x) (map-flat $f $xs)))
 
+!(test (map-flat (+ 1) (1 2 3)) (2 3 4))
+
 (= (map-flat2 (() $f)) ())
 (= (map-flat2 ((cons $x $xs) $f)) (cons ($f $x) (map-flat2 ($xs $f))))
-
-!(test (map-flat (+ 1) (1 2 3)) (2 3 4))
 
 !(test (map-flat2 ((1 2 3) (+ 1))) (2 3 4))
 
@@ -23,3 +23,8 @@
 (= (wrapper2 $f) (id $f))
 
 !(test (wrapper2 (+ 1)) (+ 1))
+
+(= (trickyspec $f) (if (= ($f 1) 2) (trickyspec (+ 2)) ($f 1)))
+
+!(test (trickyspec (+ 4)) 5)
+!(test (trickyspec (+ 1)) 3)
