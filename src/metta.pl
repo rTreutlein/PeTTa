@@ -48,16 +48,21 @@ call_in_namespace(Goal) :-
     Goal =.. [F|Args],
     call_fun(F, Args).
 
-import_user_fun(F) :-
-    forall(current_predicate(user:F/Arity),
-           ( current_predicate(F/Arity)
+import_module_fun(Module, F) :-
+    forall(current_predicate(Module:F/Arity),
+           ( current_predicate(metta:F/Arity)
              -> ensure_fun_arity(F, Arity)
-             ; functor(Head, F, Arity),
-               Head =.. [F|Args],
-               Goal =.. [F|Args],
-               assertz((Head :- user:Goal)),
-               ensure_fun_arity(F, Arity) )).
+              ; functor(Head, F, Arity),
+                Head =.. [F|Args],
+                Goal =.. [F|Args],
+                assertz((Head :- Module:Goal)),
+                ensure_fun_arity(F, Arity) )).
+
+import_user_fun(F) :- import_module_fun(user, F).
 import_user_fun(_).
+
+import_system_fun(F) :- import_module_fun(system, F).
+import_system_fun(_).
 
 
 :- current_prolog_flag(argv, Argv),
@@ -215,7 +220,7 @@ test(A,B,true) :- (A =@= B -> E = '✅' ; E = '❌'),
                   swrite(B, RB),
                   format("is ~w, should ~w. ~w ~n", [RA, RB, E]).
 
-assert(Goal, true) :- ( call_in_namespace(Goal) -> true
+assert(Goal, true) :- ( call(Goal) -> true
                                     ; swrite(Goal, RG),
                                       format("Assertion failed: ~w~n", [RG]),
                                       halt(1) ).
@@ -300,6 +305,7 @@ ensure_local_arities(F) :-
 
 register_builtin_fun(F) :-
     import_user_fun(F),
+    import_system_fun(F),
     register_fun(F),
     ensure_local_arities(F).
 
