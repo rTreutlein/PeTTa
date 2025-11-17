@@ -14,9 +14,16 @@ translate_clause(Input, (Head :- BodyConj)) :- Input = [=, [F|Args0], BodyExpr],
                                                append(GoalsA, GoalsPrefix),
                                                length(Args1, HeadArity),
                                                ( function_signature_raw(F, DeclaredArgTypesFull, ClauseOutType)
-                                                 -> true
-                                                  ; (DeclaredArgTypesFull = [], ClauseOutType = '%Undefined%') ),
-                                               limit_arg_types(DeclaredArgTypesFull, HeadArity, HeadArgTypes),
+                                                 -> length(DeclaredArgTypesFull, DeclArity),
+                                                    ( DeclArity =:= HeadArity
+                                                      -> HeadArgTypes = DeclaredArgTypesFull
+                                                       ; format(user_error,
+                                                                'Type declaration for ~w expects ~d args but clause has ~d.~n',
+                                                                [F, DeclArity, HeadArity]),
+                                                         throw(error(type_arity_mismatch(F, DeclArity, HeadArity), _)) )
+                                                  ; ( ClauseOutType = '%Undefined%',
+                                                      length(HeadArgTypes, HeadArity),
+                                                      maplist(=('%Undefined%'), HeadArgTypes) ) ),
                                                foldl([Arg, Type, EnvIn, EnvOut]>>add_type_binding(Arg, Type, EnvIn, EnvOut),
                                                      Args1, HeadArgTypes, [], HeadEnv0),
                                                add_type_binding(ExpOut, ClauseOutType, HeadEnv0, HeadEnv),
@@ -64,15 +71,6 @@ function_signature_raw(Fun, ArgTypes, OutType) :-
     TypeChain = [->|Seq],
     append(ArgTypes, [OutType], Seq).
 
-limit_arg_types(_, 0, []) :- !.
-limit_arg_types([T|Ts], N, [T|Rest]) :-
-    N > 0,
-    N1 is N - 1,
-    limit_arg_types(Ts, N1, Rest), !.
-limit_arg_types([], N, ['%Undefined%'|Rest]) :-
-    N > 0,
-    N1 is N - 1,
-    limit_arg_types([], N1, Rest).
 
 add_type_binding(Var, Type, EnvIn, EnvOut) :-
     ( var(Var), nonvar(Type), Type \== '%Undefined%'
@@ -311,7 +309,13 @@ translate_expr([H0|T0], Goals, Out) :-
             ) % Check for type definition [:,HV,TypeChain]
             -> ( function_signature_raw(Fun, DeclTypesFull, DeclOutType)
                  -> length(T, CallArgCount),
-                    limit_arg_types(DeclTypesFull, CallArgCount, ArgTypes),
+                    length(DeclTypesFull, DeclArity),
+                    ( DeclArity =:= CallArgCount
+                      -> ArgTypes = DeclTypesFull
+                       ; format(user_error,
+                                'Type declaration for ~w expects ~d args but call has ~d.~n',
+                                [Fun, DeclArity, CallArgCount]),
+                         throw(error(type_arity_mismatch(Fun, DeclArity, CallArgCount), _)) ),
                     translate_args_by_type(T, ArgTypes, GsT2, AVsTmp0),
                     (IsPartial -> append(Bound,AVsTmp0,AVsTmp) ; AVsTmp = AVsTmp0),
                     append(GsH, GsT2, InnerTmp),
