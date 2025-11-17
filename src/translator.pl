@@ -368,11 +368,6 @@ translate_expr([H0|T0], Goals, Out) :-
                     translate_args_by_type(T, ArgTypes, GsT2, AVsTmp0),
                     (IsPartial -> append(Bound,AVsTmp0,AVsTmp) ; AVsTmp = AVsTmp0),
                     append(GsH, GsT2, InnerTmp),
-                    ( ( var(DeclOutType) ; DeclOutType == '%Undefined%' )
-                      -> Extra = []
-                       ; ( var_type_matches(Out, DeclOutType)
-                           -> Extra = []
-                            ; Extra = [('get-type'(Out, DeclOutType) ; 'get-metatype'(Out, DeclOutType))] ) ),
                     record_var_type(Out, DeclOutType)
                   ; AVsTmp = AllAVs,
                     InnerTmp = Inner,
