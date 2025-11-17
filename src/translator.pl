@@ -98,7 +98,7 @@ types_compatible(T1, T2) :-
       -> T1 = T2
     ; var(T2)
       -> T1 = T2
-    ; T1 == T2 ).
+    ; T1 = T2 ).
 
 merge_type_status(proven, _, proven).
 merge_type_status(_, proven, proven).
@@ -149,8 +149,8 @@ literal_matches_declared_type(Value, Type) :-
     nonvar(Value),
     nonvar(Type),
     Type \== '%Undefined%',
-    once( ( 'get-type'(Value, Type)
-          ; 'get-metatype'(Value, Type) ) ).
+    ( literal_runtime_type(Value, Type)
+    ; literal_function_type_matches(Value, Type) ).
 
 ensure_literal_matches_type(Value, Type) :-
     ( literal_matches_declared_type(Value, Type)
@@ -161,8 +161,24 @@ ensure_literal_matches_type(Value, Type) :-
          throw(error(literal_type_mismatch(Value, Type), _)) ).
 
 value_type_term(Value, Type) :-
+    ( literal_runtime_type(Value, Type)
+    ; function_literal_type(Value, Type) ),
+    !.
+
+literal_runtime_type(Value, Type) :-
     once( ( 'get-type'(Value, Type)
           ; 'get-metatype'(Value, Type) ) ).
+
+function_literal_type(Value, TypeChain) :-
+    atom(Value),
+    fun(Value),
+    function_signature_raw(Value, ArgTypes, OutType),
+    append(ArgTypes, [OutType], Seq),
+    TypeChain = [->|Seq].
+
+literal_function_type_matches(Value, Type) :-
+    function_literal_type(Value, FunctionType),
+    types_compatible(FunctionType, Type).
 
 ensure_value_matches_type(Value, Type) :-
     value_type_term(Value, Type), !.

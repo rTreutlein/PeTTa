@@ -148,6 +148,17 @@ get_function_type([F,Arg], T) :- match('&self', [':',F,['->',A,B]], _, _),
 'get-metatype'(X, 'Expression') :- is_list(X), !.     % e.g., (+ 1 2), (a b)
 'get-metatype'(X, 'Symbol') :- atom(X), !.            % e.g., a
 
+ensure_builtin_type(Fun, TypeSeq) :-
+    ( match('&self', [':', Fun, _], _, _)
+      -> true
+       ; TypeChain = [->|TypeSeq],
+         'add-atom'('&self', [':', Fun, TypeChain], true) ).
+
+:- forall(member(Fun-TypeSeq, [
+               '+'-['Number','Number','Number']
+           ]),
+          ensure_builtin_type(Fun, TypeSeq)).
+
 'is-var'(A,R) :- var(A) -> R=true ; R=false.
 'is-expr'(A,R) :- is_list(A) -> R=true ; R=false.
 'is-space'(A,R) :- atom(A), atom_concat('&', _, A) -> R=true ; R=false.
