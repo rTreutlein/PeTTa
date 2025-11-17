@@ -12,7 +12,14 @@ constrain_args(In, Out, Goals) :- maplist(constrain_args, In, Out, NestedGoalsLi
 translate_clause(Input, (Head :- BodyConj)) :- Input = [=, [F|Args0], BodyExpr],
                                                maplist(constrain_args, Args0, Args1, GoalsA),
                                                append(GoalsA, GoalsPrefix),
-                                               translate_expr(BodyExpr, GoalsBody, ExpOut),
+                                               length(Args1, HeadArity),
+                                               lookup_function_signature(F, DeclaredArgTypesFull, ClauseOutType),
+                                               limit_arg_types(DeclaredArgTypesFull, HeadArity, HeadArgTypes),
+                                               build_head_type_env(Args1, HeadArgTypes, HeadEnv0),
+                                               add_type_binding(ExpOut, ClauseOutType, HeadEnv0, HeadEnv),
+                                               current_type_env(OuterEnv),
+                                               merge_type_envs(HeadEnv, OuterEnv, ClauseEnv),
+                                               with_type_env(ClauseEnv, translate_expr(BodyExpr, GoalsBody, ExpOut)),
                                                (  nonvar(ExpOut) , ExpOut = partial(Base,Bound)
                                                -> current_predicate(Base/Arity), length(Bound, N), M is (Arity - N) - 1,
                                                   length(ExtraArgs, M), append([Bound,ExtraArgs,[Out]],CallArgs), Goal =.. [Base|CallArgs],
@@ -27,6 +34,95 @@ translate_clause(Input, (Head :- BodyConj)) :- Input = [=, [F|Args0], BodyExpr],
 goals_list_to_conj([], true)      :- !.
 goals_list_to_conj([G], G)        :- !.
 goals_list_to_conj([G|Gs], (G,R)) :- goals_list_to_conj(Gs, R).
+
+% --- Compile-time type tracking helpers ---
+
+translator_type_env_name('__translator_type_env').
+
+current_type_env(Env) :-
+    translator_type_env_name(Name),
+    ( catch(nb_current(Name, Env0), _, fail) -> Env = Env0 ; Env = [] ).
+
+set_type_env(Env) :-
+    translator_type_env_name(Name),
+    nb_linkval(Name, Env).
+
+with_type_env(Env, Goal) :-
+    current_type_env(Old),
+    set_type_env(Env),
+    call_cleanup(Goal, set_type_env(Old)).
+
+function_signature_raw(Fun, ArgTypes, OutType) :-
+    catch(match('&self', [':', Fun, TypeChain], TypeChain, TypeChain), _, fail),
+    nonvar(TypeChain),
+    TypeChain = [->|Seq],
+    append(ArgTypes, [OutType], Seq).
+
+lookup_function_signature(Fun, ArgTypes, OutType) :-
+    ( function_signature_raw(Fun, ArgTypes, OutType)
+      -> true
+       ; (ArgTypes = [], OutType = '%Undefined%') ).
+
+has_function_signature(Fun, ArgTypes, OutType) :-
+    function_signature_raw(Fun, ArgTypes, OutType).
+
+limit_arg_types(_, 0, []) :- !.
+limit_arg_types([T|Ts], N, [T|Rest]) :-
+    N > 0,
+    N1 is N - 1,
+    limit_arg_types(Ts, N1, Rest), !.
+limit_arg_types([], N, ['%Undefined%'|Rest]) :-
+    N > 0,
+    N1 is N - 1,
+    limit_arg_types([], N1, Rest).
+
+add_type_binding(Var, Type, EnvIn, EnvOut) :-
+    ( var(Var), nonvar(Type), Type \== '%Undefined%'
+      -> remove_var_from_env(Var, EnvIn, Trimmed),
+         EnvOut = [Var-Type|Trimmed]
+      ; EnvOut = EnvIn ).
+
+build_head_type_env(Args, Types, Env) :-
+    build_head_type_env(Args, Types, [], Env).
+
+build_head_type_env([], [], Env, Env).
+build_head_type_env([Arg|Args], [Type|Types], EnvIn, EnvOut) :-
+    add_type_binding(Arg, Type, EnvIn, EnvTmp),
+    build_head_type_env(Args, Types, EnvTmp, EnvOut).
+build_head_type_env(_, [], Env, Env).
+
+merge_type_envs([], Base, Base).
+merge_type_envs([Var-Type|Rest], Base, [Var-Type|MergedRest]) :-
+    remove_var_from_env(Var, Base, Trimmed),
+    merge_type_envs(Rest, Trimmed, MergedRest).
+
+remove_var_from_env(_, [], []).
+remove_var_from_env(Var, [V-T|Rest], Result) :-
+    ( V == Var -> Result = Rest
+               ; Result = [V-T|Tail],
+                 remove_var_from_env(Var, Rest, Tail) ).
+
+record_var_type(Var, Type) :-
+    ( var(Var), nonvar(Type), Type \== '%Undefined%'
+      -> current_type_env(Env0),
+         remove_var_from_env(Var, Env0, Trimmed),
+         set_type_env([Var-Type|Trimmed])
+      ; true ).
+
+var_type_matches(Var, Type) :-
+    var(Var),
+    nonvar(Type),
+    Type \== '%Undefined%',
+    current_type_env(Env),
+    member(V-T, Env),
+    V == Var,
+    T == Type.
+
+maybe_result_guard(_, Type, []) :-
+    ( var(Type) ; Type == '%Undefined%' ), !.
+maybe_result_guard(Out, Type, []) :-
+    var_type_matches(Out, Type), !.
+maybe_result_guard(Out, Type, [('get-type'(Out, Type) ; 'get-metatype'(Out, Type))]).
 
 % Runtime dispatcher: call F if it's a registered fun/1, else keep as list:
 reduce([F|Args], Out) :- nonvar(F), atom(F), fun(F)
@@ -235,15 +331,14 @@ translate_expr([H0|T0], Goals, Out) :-
             ( atom(HV), fun(HV), Fun = HV, AllAVs = AVs, IsPartial = false
             ; compound(HV), HV = partial(Fun, Bound), append(Bound,AVs,AllAVs), IsPartial = true
             ) % Check for type definition [:,HV,TypeChain]
-            -> ( catch(match('&self', [':', Fun, TypeChain], TypeChain, TypeChain), _, fail)
-                 -> TypeChain = [->|Xs],
-                    append(ArgTypes, [OutType], Xs),
+            -> ( has_function_signature(Fun, DeclTypesFull, DeclOutType)
+                 -> length(T, CallArgCount),
+                    limit_arg_types(DeclTypesFull, CallArgCount, ArgTypes),
                     translate_args_by_type(T, ArgTypes, GsT2, AVsTmp0),
                     (IsPartial -> append(Bound,AVsTmp0,AVsTmp) ; AVsTmp = AVsTmp0),
                     append(GsH, GsT2, InnerTmp),
-                    ( OutType == '%Undefined%'
-                      -> Extra = []
-                       ; Extra = [('get-type'(Out, OutType) ; 'get-metatype'(Out, OutType))] )
+                    maybe_result_guard(Out, DeclOutType, Extra),
+                    record_var_type(Out, DeclOutType)
                   ; AVsTmp = AllAVs,
                     InnerTmp = Inner,
                     Extra = [] ),
@@ -267,13 +362,18 @@ translate_expr([H0|T0], Goals, Out) :-
 %Selectively apply translate_args for non-Expression args while Expression args stay as data input:
 translate_args_by_type([], _, [], []) :- !.
 translate_args_by_type([A|As], [T|Ts], GsOut, [AV|AVs]) :-
-                      ( T == 'Expression' -> AV = A, GsA = []
-                                           ; translate_expr(A, GsA1, AV),
-                                             ( T == '%Undefined%'
-                                               -> GsA = GsA1
-                                                ; append(GsA1, [('get-type'(AV, T) ; 'get-metatype'(AV, T))], GsA))),
-                                             translate_args_by_type(As, Ts, GsRest, AVs),
-                                             append(GsA, GsRest, GsOut).
+                      ( T == 'Expression'
+                        -> AV = A, GsA = []
+                         ; translate_expr(A, GsA1, AV),
+                           ( T == '%Undefined%'
+                             -> Guards = []
+                              ; ( var_type_matches(AV, T)
+                                  -> Guards = []
+                                   ; Guards = [('get-type'(AV, T) ; 'get-metatype'(AV, T))] )),
+                           append(GsA1, Guards, GsA),
+                           record_var_type(AV, T) ),
+                      translate_args_by_type(As, Ts, GsRest, AVs),
+                      append(GsA, GsRest, GsOut).
 
 %Handle data list:
 eval_data_term(X, [], X) :- (var(X); atomic(X)), !.
