@@ -73,10 +73,7 @@ function_signature_raw(Fun, ArgTypes, OutType) :-
 
 
 add_type_binding(Var, Type, EnvIn, EnvOut) :-
-    ( var(Var), nonvar(Type), Type \== '%Undefined%'
-      -> remove_var_from_env(Var, EnvIn, Trimmed),
-         EnvOut = [Var-Type|Trimmed]
-      ; EnvOut = EnvIn ).
+    set_env_type_binding(Var, Type, EnvIn, EnvOut).
 
 remove_var_from_env(_, [], []).
 remove_var_from_env(Var, [V-T|Rest], Result) :-
@@ -84,11 +81,38 @@ remove_var_from_env(Var, [V-T|Rest], Result) :-
                ; Result = [V-T|Tail],
                  remove_var_from_env(Var, Rest, Tail) ).
 
+trackable_type(Type) :-
+    nonvar(Type),
+    Type \== '%Undefined%'.
+
+ensure_type_binding_consistent(Var, Type, Env) :-
+    ( member(V-T, Env),
+      V == Var
+      -> ( T == Type
+           -> true
+            ; format(user_error,
+                     'Type mismatch for ~w: previously declared as ~w but now required as ~w.~n',
+                     [Var, T, Type]),
+              throw(error(type_conflict(Var, T, Type), _)) )
+      ; true ).
+
+set_env_type_binding(Var, Type, EnvIn, EnvOut) :-
+    ( var(Var), trackable_type(Type)
+      -> ensure_type_binding_consistent(Var, Type, EnvIn),
+         remove_var_from_env(Var, EnvIn, Trimmed),
+         EnvOut = [Var-Type|Trimmed]
+      ; EnvOut = EnvIn ).
+
 record_var_type(Var, Type) :-
-    ( var(Var), nonvar(Type), Type \== '%Undefined%'
+    ( var(Var), trackable_type(Type)
       -> current_type_env(Env0),
-         remove_var_from_env(Var, Env0, Trimmed),
-         set_type_env([Var-Type|Trimmed])
+         set_env_type_binding(Var, Type, Env0, Env1),
+         set_type_env(Env1)
+      ; true ).
+
+maybe_expect_var_type(Var, Type) :-
+    ( var(Var), trackable_type(Type)
+      -> record_var_type(Var, Type)
       ; true ).
 
 var_type_matches(Var, Type) :-
@@ -375,7 +399,8 @@ translate_args_by_type([], _, [], []) :- !.
 translate_args_by_type([A|As], [T|Ts], GsOut, [AV|AVs]) :-
                       ( T == 'Expression'
                         -> AV = A, GsA = []
-                         ; translate_expr(A, GsA1, AV),
+                         ; maybe_expect_var_type(AV, T),
+                           translate_expr(A, GsA1, AV),
                            determine_type_guards(AV, T, Guards),
                            append(GsA1, Guards, GsA),
                            record_var_type(AV, T) ),
