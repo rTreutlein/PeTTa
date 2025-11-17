@@ -16,14 +16,16 @@ translate_clause(Input, (Head :- BodyConj)) :- Input = [=, [F|Args0], BodyExpr],
                                                ( function_signature_raw(F, DeclaredArgTypesFull, ClauseOutType)
                                                  -> length(DeclaredArgTypesFull, DeclArity),
                                                     ( DeclArity =:= HeadArity
-                                                      -> HeadArgTypes = DeclaredArgTypesFull
+                                                      -> HeadArgTypes = DeclaredArgTypesFull,
+                                                         DeclSource = declared
                                                        ; format(user_error,
                                                                 'Type declaration for ~w expects ~d args but clause has ~d.~n',
                                                                 [F, DeclArity, HeadArity]),
                                                          throw(error(type_arity_mismatch(F, DeclArity, HeadArity), _)) )
                                                   ; ( ClauseOutType = '%Undefined%',
                                                       length(HeadArgTypes, HeadArity),
-                                                      maplist(=('%Undefined%'), HeadArgTypes) ) ),
+                                                      maplist(=('%Undefined%'), HeadArgTypes),
+                                                      DeclSource = undefined ) ),
                                                foldl([Arg, Type, EnvIn, EnvOut]>>add_type_binding(Arg, Type, EnvIn, EnvOut),
                                                      Args1, HeadArgTypes, [], HeadEnv0),
                                                add_type_binding(ExpOut, ClauseOutType, HeadEnv0, HeadEnv),
@@ -32,11 +34,14 @@ translate_clause(Input, (Head :- BodyConj)) :- Input = [=, [F|Args0], BodyExpr],
                                                foldl([Var-Binding, AccEnv, OutEnv]>>(remove_var_from_env(Var, AccEnv, Trimmed),
                                                                                      OutEnv = [Var-Binding|Trimmed]),
                                                      RevHeadEnv, OuterEnv, ClauseEnv),
-                                               with_type_env(ClauseEnv, translate_expr(BodyExpr, GoalsBody, ExpOut)),
+                                               with_type_env(ClauseEnv,
+                                                             ( translate_expr(BodyExpr, GoalsBody, ExpOut),
+                                                               current_type_env(BodyEnvFinal) )),
+                                               maybe_record_inferred_signature(DeclSource, F, Args1, ExpOut, BodyEnvFinal),
                                                (  nonvar(ExpOut) , ExpOut = partial(Base,Bound)
-                                               -> current_predicate(Base/Arity), length(Bound, N), M is (Arity - N) - 1,
-                                                  length(ExtraArgs, M), append([Bound,ExtraArgs,[Out]],CallArgs), Goal =.. [Base|CallArgs],
-                                                  append(GoalsBody,[Goal],FinalGoals), append(Args1,ExtraArgs,HeadArgs)
+                                                -> current_predicate(Base/Arity), length(Bound, N), M is (Arity - N) - 1,
+                                                   length(ExtraArgs, M), append([Bound,ExtraArgs,[Out]],CallArgs), Goal =.. [Base|CallArgs],
+                                                   append(GoalsBody,[Goal],FinalGoals), append(Args1,ExtraArgs,HeadArgs)
                                                ; FinalGoals= GoalsBody , HeadArgs = Args1, Out = ExpOut ),
                                                append(HeadArgs, [Out], FinalArgs),
                                                Head =.. [F|FinalArgs],
@@ -70,6 +75,13 @@ function_signature_raw(Fun, ArgTypes, OutType) :-
     nonvar(TypeChain),
     TypeChain = [->|Seq],
     append(ArgTypes, [OutType], Seq).
+
+:- dynamic inferred_function_signature/3.
+
+function_signature(Fun, ArgTypes, OutType) :-
+    function_signature_raw(Fun, ArgTypes, OutType).
+function_signature(Fun, ArgTypes, OutType) :-
+    inferred_function_signature(Fun, ArgTypes, OutType).
 
 
 add_type_binding(Var, Type, EnvIn, EnvOut) :-
@@ -122,7 +134,7 @@ set_env_type_binding(Var, Type, Status, EnvIn, EnvOut) :-
                  ; format(user_error,
                           'Type mismatch for ~w: previously declared as ~w but now required as ~w.~n',
                           [Var, ExistingType, Type]),
-                   throw(error(type_conflict(Var, ExistingType, Type), _)) ) ),
+                   throw(error(type_conflict(existing(ExistingType), required(Type)), _)) ) ),
          EnvOut = [Var-type_binding(FinalType, FinalStatus)|Trimmed]
       ; EnvOut = EnvIn ).
 
@@ -172,7 +184,7 @@ literal_runtime_type(Value, Type) :-
 function_literal_type(Value, TypeChain) :-
     atom(Value),
     fun(Value),
-    function_signature_raw(Value, ArgTypes, OutType),
+    function_signature(Value, ArgTypes, OutType),
     append(ArgTypes, [OutType], Seq),
     TypeChain = [->|Seq].
 
@@ -199,6 +211,48 @@ ensure_type_variable(Value, TypeVar) :-
                         [Value]),
                  throw(error(result_type_mismatch(Value, 'TypeVariable'), _)) )
          ; true ).
+
+env_binding_proven_type(Var, Env, Type) :-
+    var(Var),
+    member(EnvVar-type_binding(Type, Status), Env),
+    EnvVar == Var,
+    Status == proven,
+    trackable_type(Type),
+    nonvar(Type).
+
+var_proven_type(Env, Var, Type) :-
+    env_binding_proven_type(Var, Env, Type).
+
+collect_proven_types(Vars, Env, Types) :-
+    maplist(var_proven_type(Env), Vars, Types).
+
+maybe_record_inferred_signature(declared, _, _, _, _) :- !.
+maybe_record_inferred_signature(_, Fun, Args, OutVar, Env) :-
+    collect_proven_types(Args, Env, ArgTypes),
+    env_binding_proven_type(OutVar, Env, OutType),
+    record_inferred_signature(Fun, ArgTypes, OutType), !.
+maybe_record_inferred_signature(_, _, _, _, _) :- true.
+
+record_inferred_signature(Fun, ArgTypes, OutType) :-
+    ( inferred_function_signature(Fun, ExistingArgs, ExistingOut)
+      -> ( same_length_list(ExistingArgs, ArgTypes),
+           types_compatible_list(ExistingArgs, ArgTypes),
+           types_compatible(ExistingOut, OutType)
+         -> true
+          ; format(user_error,
+                   'Inferred type for ~w conflicts between clauses (~q vs ~q).~n',
+                   [Fun, [ExistingArgs, ExistingOut], [ArgTypes, OutType]]),
+            throw(error(type_conflict(Fun, existing(ExistingArgs, ExistingOut), inferred(ArgTypes, OutType)), _)) )
+      ; assertz(inferred_function_signature(Fun, ArgTypes, OutType)) ).
+
+same_length_list([], []).
+same_length_list([_|As], [_|Bs]) :-
+    same_length_list(As, Bs).
+
+types_compatible_list([], []).
+types_compatible_list([A|As], [B|Bs]) :-
+    types_compatible(A, B),
+    types_compatible_list(As, Bs).
 
 determine_type_guards(_, '%Undefined%', []) :- !.
 determine_type_guards(_, Type, []) :-
@@ -426,8 +480,8 @@ translate_expr([H0|T0], Goals, Out) :-
           ( is_list(AVs), 
             ( atom(HV), fun(HV), Fun = HV, AllAVs = AVs, IsPartial = false
             ; compound(HV), HV = partial(Fun, Bound), append(Bound,AVs,AllAVs), IsPartial = true
-            ) % Check for type definition [:,HV,TypeChain]
-            -> ( function_signature_raw(Fun, DeclTypesFull, DeclOutType)
+            ) % Check for type information (declared or inferred)
+            -> ( function_signature(Fun, DeclTypesFull, DeclOutType)
                  -> length(T, CallArgCount),
                     length(DeclTypesFull, DeclArity),
                     ( DeclArity =:= CallArgCount
