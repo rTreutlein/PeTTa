@@ -100,6 +100,31 @@ var_type_matches(Var, Type) :-
     V == Var,
     T == Type.
 
+literal_matches_declared_type(Value, Type) :-
+    nonvar(Value),
+    nonvar(Type),
+    Type \== '%Undefined%',
+    once( ( 'get-type'(Value, Type)
+          ; 'get-metatype'(Value, Type) ) ).
+
+ensure_literal_matches_type(Value, Type) :-
+    ( literal_matches_declared_type(Value, Type)
+      -> true
+       ; format(user_error,
+                'Literal ~q does not satisfy declared type ~q.~n',
+                [Value, Type]),
+         throw(error(literal_type_mismatch(Value, Type), _)) ).
+
+determine_type_guards(_, '%Undefined%', []) :- !.
+determine_type_guards(_, Type, []) :- var(Type), !.
+determine_type_guards(Value, Type, []) :-
+    nonvar(Value),
+    ensure_literal_matches_type(Value, Type), !.
+determine_type_guards(Value, Type, []) :-
+    var_type_matches(Value, Type), !.
+determine_type_guards(Value, Type,
+                      [('get-type'(Value, Type) ; 'get-metatype'(Value, Type))]).
+
 % Runtime dispatcher: call F if it's a registered fun/1, else keep as list:
 reduce([F|Args], Out) :- nonvar(F), atom(F), fun(F)
                          -> % --- Case 1: callable predicate ---
@@ -351,11 +376,7 @@ translate_args_by_type([A|As], [T|Ts], GsOut, [AV|AVs]) :-
                       ( T == 'Expression'
                         -> AV = A, GsA = []
                          ; translate_expr(A, GsA1, AV),
-                           ( T == '%Undefined%'
-                             -> Guards = []
-                              ; ( var_type_matches(AV, T)
-                                  -> Guards = []
-                                   ; Guards = [('get-type'(AV, T) ; 'get-metatype'(AV, T))] )),
+                           determine_type_guards(AV, T, Guards),
                            append(GsA1, Guards, GsA),
                            record_var_type(AV, T) ),
                       translate_args_by_type(As, Ts, GsRest, AVs),
