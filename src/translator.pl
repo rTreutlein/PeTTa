@@ -13,12 +13,18 @@ translate_clause(Input, (Head :- BodyConj)) :- Input = [=, [F|Args0], BodyExpr],
                                                maplist(constrain_args, Args0, Args1, GoalsA),
                                                append(GoalsA, GoalsPrefix),
                                                length(Args1, HeadArity),
-                                               lookup_function_signature(F, DeclaredArgTypesFull, ClauseOutType),
+                                               ( function_signature_raw(F, DeclaredArgTypesFull, ClauseOutType)
+                                                 -> true
+                                                  ; (DeclaredArgTypesFull = [], ClauseOutType = '%Undefined%') ),
                                                limit_arg_types(DeclaredArgTypesFull, HeadArity, HeadArgTypes),
-                                               build_head_type_env(Args1, HeadArgTypes, HeadEnv0),
+                                               foldl([Arg, Type, EnvIn, EnvOut]>>add_type_binding(Arg, Type, EnvIn, EnvOut),
+                                                     Args1, HeadArgTypes, [], HeadEnv0),
                                                add_type_binding(ExpOut, ClauseOutType, HeadEnv0, HeadEnv),
                                                current_type_env(OuterEnv),
-                                               merge_type_envs(HeadEnv, OuterEnv, ClauseEnv),
+                                               reverse(HeadEnv, RevHeadEnv),
+                                               foldl([Var-Type, AccEnv, OutEnv]>>(remove_var_from_env(Var, AccEnv, Trimmed),
+                                                                                  OutEnv = [Var-Type|Trimmed]),
+                                                     RevHeadEnv, OuterEnv, ClauseEnv),
                                                with_type_env(ClauseEnv, translate_expr(BodyExpr, GoalsBody, ExpOut)),
                                                (  nonvar(ExpOut) , ExpOut = partial(Base,Bound)
                                                -> current_predicate(Base/Arity), length(Bound, N), M is (Arity - N) - 1,
@@ -58,14 +64,6 @@ function_signature_raw(Fun, ArgTypes, OutType) :-
     TypeChain = [->|Seq],
     append(ArgTypes, [OutType], Seq).
 
-lookup_function_signature(Fun, ArgTypes, OutType) :-
-    ( function_signature_raw(Fun, ArgTypes, OutType)
-      -> true
-       ; (ArgTypes = [], OutType = '%Undefined%') ).
-
-has_function_signature(Fun, ArgTypes, OutType) :-
-    function_signature_raw(Fun, ArgTypes, OutType).
-
 limit_arg_types(_, 0, []) :- !.
 limit_arg_types([T|Ts], N, [T|Rest]) :-
     N > 0,
@@ -81,20 +79,6 @@ add_type_binding(Var, Type, EnvIn, EnvOut) :-
       -> remove_var_from_env(Var, EnvIn, Trimmed),
          EnvOut = [Var-Type|Trimmed]
       ; EnvOut = EnvIn ).
-
-build_head_type_env(Args, Types, Env) :-
-    build_head_type_env(Args, Types, [], Env).
-
-build_head_type_env([], [], Env, Env).
-build_head_type_env([Arg|Args], [Type|Types], EnvIn, EnvOut) :-
-    add_type_binding(Arg, Type, EnvIn, EnvTmp),
-    build_head_type_env(Args, Types, EnvTmp, EnvOut).
-build_head_type_env(_, [], Env, Env).
-
-merge_type_envs([], Base, Base).
-merge_type_envs([Var-Type|Rest], Base, [Var-Type|MergedRest]) :-
-    remove_var_from_env(Var, Base, Trimmed),
-    merge_type_envs(Rest, Trimmed, MergedRest).
 
 remove_var_from_env(_, [], []).
 remove_var_from_env(Var, [V-T|Rest], Result) :-
@@ -117,12 +101,6 @@ var_type_matches(Var, Type) :-
     member(V-T, Env),
     V == Var,
     T == Type.
-
-maybe_result_guard(_, Type, []) :-
-    ( var(Type) ; Type == '%Undefined%' ), !.
-maybe_result_guard(Out, Type, []) :-
-    var_type_matches(Out, Type), !.
-maybe_result_guard(Out, Type, [('get-type'(Out, Type) ; 'get-metatype'(Out, Type))]).
 
 % Runtime dispatcher: call F if it's a registered fun/1, else keep as list:
 reduce([F|Args], Out) :- nonvar(F), atom(F), fun(F)
@@ -331,13 +309,17 @@ translate_expr([H0|T0], Goals, Out) :-
             ( atom(HV), fun(HV), Fun = HV, AllAVs = AVs, IsPartial = false
             ; compound(HV), HV = partial(Fun, Bound), append(Bound,AVs,AllAVs), IsPartial = true
             ) % Check for type definition [:,HV,TypeChain]
-            -> ( has_function_signature(Fun, DeclTypesFull, DeclOutType)
+            -> ( function_signature_raw(Fun, DeclTypesFull, DeclOutType)
                  -> length(T, CallArgCount),
                     limit_arg_types(DeclTypesFull, CallArgCount, ArgTypes),
                     translate_args_by_type(T, ArgTypes, GsT2, AVsTmp0),
                     (IsPartial -> append(Bound,AVsTmp0,AVsTmp) ; AVsTmp = AVsTmp0),
                     append(GsH, GsT2, InnerTmp),
-                    maybe_result_guard(Out, DeclOutType, Extra),
+                    ( ( var(DeclOutType) ; DeclOutType == '%Undefined%' )
+                      -> Extra = []
+                       ; ( var_type_matches(Out, DeclOutType)
+                           -> Extra = []
+                            ; Extra = [('get-type'(Out, DeclOutType) ; 'get-metatype'(Out, DeclOutType))] ) ),
                     record_var_type(Out, DeclOutType)
                   ; AVsTmp = AllAVs,
                     InnerTmp = Inner,
