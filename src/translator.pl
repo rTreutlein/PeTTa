@@ -29,8 +29,8 @@ translate_clause(Input, (Head :- BodyConj)) :- Input = [=, [F|Args0], BodyExpr],
                                                add_type_binding(ExpOut, ClauseOutType, HeadEnv0, HeadEnv),
                                                current_type_env(OuterEnv),
                                                reverse(HeadEnv, RevHeadEnv),
-                                               foldl([Var-Type, AccEnv, OutEnv]>>(remove_var_from_env(Var, AccEnv, Trimmed),
-                                                                                  OutEnv = [Var-Type|Trimmed]),
+                                               foldl([Var-Binding, AccEnv, OutEnv]>>(remove_var_from_env(Var, AccEnv, Trimmed),
+                                                                                     OutEnv = [Var-Binding|Trimmed]),
                                                      RevHeadEnv, OuterEnv, ClauseEnv),
                                                with_type_env(ClauseEnv, translate_expr(BodyExpr, GoalsBody, ExpOut)),
                                                (  nonvar(ExpOut) , ExpOut = partial(Base,Bound)
@@ -73,56 +73,77 @@ function_signature_raw(Fun, ArgTypes, OutType) :-
 
 
 add_type_binding(Var, Type, EnvIn, EnvOut) :-
-    set_env_type_binding(Var, Type, EnvIn, EnvOut).
+    set_env_type_binding(Var, Type, expected, EnvIn, EnvOut).
 
 remove_var_from_env(_, [], []).
-remove_var_from_env(Var, [V-T|Rest], Result) :-
+remove_var_from_env(Var, [V-Binding|Rest], Result) :-
     ( V == Var -> Result = Rest
-               ; Result = [V-T|Tail],
+               ; Result = [V-Binding|Tail],
                  remove_var_from_env(Var, Rest, Tail) ).
 
+trackable_type(Type) :-
+    var(Type), !.
 trackable_type(Type) :-
     nonvar(Type),
     Type \== '%Undefined%'.
 
-ensure_type_binding_consistent(Var, Type, Env) :-
-    ( member(V-T, Env),
-      V == Var
-      -> ( T == Type
-           -> true
-            ; format(user_error,
-                     'Type mismatch for ~w: previously declared as ~w but now required as ~w.~n',
-                     [Var, T, Type]),
-              throw(error(type_conflict(Var, T, Type), _)) )
-      ; true ).
+lookup_var_type(Var, Type, Status) :-
+    var(Var),
+    current_type_env(Env),
+    member(V-type_binding(Type, Status), Env),
+    V == Var.
 
-set_env_type_binding(Var, Type, EnvIn, EnvOut) :-
+types_compatible(T1, T2) :-
+    ( var(T1)
+      -> T1 = T2
+    ; var(T2)
+      -> T1 = T2
+    ; T1 == T2 ).
+
+merge_type_status(proven, _, proven).
+merge_type_status(_, proven, proven).
+merge_type_status(_, _, expected).
+
+extract_type_binding(Var, [V-type_binding(T,S)|Rest], T, S, Rest) :-
+    V == Var, !.
+extract_type_binding(Var, [Entry|Rest], T, S, [Entry|Trimmed]) :-
+    extract_type_binding(Var, Rest, T, S, Trimmed).
+extract_type_binding(_, [], none, none, []).
+
+set_env_type_binding(Var, Type, Status, EnvIn, EnvOut) :-
     ( var(Var), trackable_type(Type)
-      -> ensure_type_binding_consistent(Var, Type, EnvIn),
-         remove_var_from_env(Var, EnvIn, Trimmed),
-         EnvOut = [Var-Type|Trimmed]
+      -> extract_type_binding(Var, EnvIn, ExistingType, ExistingStatus, Trimmed),
+         ( ExistingType == none
+           -> FinalType = Type,
+              FinalStatus = Status
+            ; ( types_compatible(ExistingType, Type)
+                -> FinalType = ExistingType,
+                   merge_type_status(ExistingStatus, Status, FinalStatus)
+                 ; format(user_error,
+                          'Type mismatch for ~w: previously declared as ~w but now required as ~w.~n',
+                          [Var, ExistingType, Type]),
+                   throw(error(type_conflict(Var, ExistingType, Type), _)) ) ),
+         EnvOut = [Var-type_binding(FinalType, FinalStatus)|Trimmed]
       ; EnvOut = EnvIn ).
 
 record_var_type(Var, Type) :-
     ( var(Var), trackable_type(Type)
       -> current_type_env(Env0),
-         set_env_type_binding(Var, Type, Env0, Env1),
+         set_env_type_binding(Var, Type, proven, Env0, Env1),
          set_type_env(Env1)
       ; true ).
 
 maybe_expect_var_type(Var, Type) :-
     ( var(Var), trackable_type(Type)
-      -> record_var_type(Var, Type)
+      -> current_type_env(Env0),
+         set_env_type_binding(Var, Type, expected, Env0, Env1),
+         set_type_env(Env1)
       ; true ).
 
 var_type_matches(Var, Type) :-
-    var(Var),
-    nonvar(Type),
-    Type \== '%Undefined%',
-    current_type_env(Env),
-    member(V-T, Env),
-    V == Var,
-    T == Type.
+    trackable_type(Type),
+    lookup_var_type(Var, Existing, _),
+    types_compatible(Existing, Type).
 
 literal_matches_declared_type(Value, Type) :-
     nonvar(Value),
@@ -139,15 +160,49 @@ ensure_literal_matches_type(Value, Type) :-
                 [Value, Type]),
          throw(error(literal_type_mismatch(Value, Type), _)) ).
 
+value_type_term(Value, Type) :-
+    once( ( 'get-type'(Value, Type)
+          ; 'get-metatype'(Value, Type) ) ).
+
+ensure_value_matches_type(Value, Type) :-
+    value_type_term(Value, Type), !.
+ensure_value_matches_type(Value, Type) :-
+    format(user_error,
+           'Value ~q does not satisfy declared type ~q.~n',
+           [Value, Type]),
+    throw(error(result_type_mismatch(Value, Type), _)).
+
+ensure_type_variable(Value, TypeVar) :-
+    ( nonvar(TypeVar)
+      -> ensure_value_matches_type(Value, TypeVar)
+       ; nonvar(Value)
+         -> ( value_type_term(Value, Detected)
+              -> TypeVar = Detected
+               ; format(user_error,
+                        'Unable to determine type for ~q to satisfy variable constraint.~n',
+                        [Value]),
+                 throw(error(result_type_mismatch(Value, 'TypeVariable'), _)) )
+         ; true ).
+
 determine_type_guards(_, '%Undefined%', []) :- !.
-determine_type_guards(_, Type, []) :- var(Type), !.
+determine_type_guards(_, Type, []) :-
+    \+ trackable_type(Type), !.
 determine_type_guards(Value, Type, []) :-
     nonvar(Value),
+    nonvar(Type),
     ensure_literal_matches_type(Value, Type), !.
 determine_type_guards(Value, Type, []) :-
+    nonvar(Value),
+    var(Type),
+    value_type_term(Value, LiteralType),
+    types_compatible(Type, LiteralType), !.
+determine_type_guards(Value, Type, []) :-
     var_type_matches(Value, Type), !.
-determine_type_guards(Value, Type,
-                      [('get-type'(Value, Type) ; 'get-metatype'(Value, Type))]).
+determine_type_guards(Value, Type, Guards) :-
+    trackable_type(Type),
+    ( var(Type)
+      -> Guards = [ensure_type_variable(Value, Type)]
+       ; Guards = [ensure_value_matches_type(Value, Type)] ).
 
 % Runtime dispatcher: call F if it's a registered fun/1, else keep as list:
 reduce([F|Args], Out) :- nonvar(F), atom(F), fun(F)
@@ -365,10 +420,23 @@ translate_expr([H0|T0], Goals, Out) :-
                                 'Type declaration for ~w expects ~d args but call has ~d.~n',
                                 [Fun, DeclArity, CallArgCount]),
                          throw(error(type_arity_mismatch(Fun, DeclArity, CallArgCount), _)) ),
+                    ( trackable_type(DeclOutType)
+                      -> maybe_expect_var_type(Out, DeclOutType)
+                       ; true ),
                     translate_args_by_type(T, ArgTypes, GsT2, AVsTmp0),
                     (IsPartial -> append(Bound,AVsTmp0,AVsTmp) ; AVsTmp = AVsTmp0),
                     append(GsH, GsT2, InnerTmp),
-                    record_var_type(Out, DeclOutType)
+                    record_var_type(Out, DeclOutType),
+                    ( trackable_type(DeclOutType)
+                      -> ( nonvar(Out)
+                           -> ensure_value_matches_type(Out, DeclOutType),
+                              Extra = []
+                            ; ( var_type_matches(Out, DeclOutType)
+                                -> Extra = []
+                                 ; ( var(DeclOutType)
+                                     -> Extra = [ensure_type_variable(Out, DeclOutType)]
+                                      ; Extra = [ensure_value_matches_type(Out, DeclOutType)] ) ) )
+                       ; Extra = [] )
                   ; AVsTmp = AllAVs,
                     InnerTmp = Inner,
                     Extra = [] ),
