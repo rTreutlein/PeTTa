@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 run_test() {
     f="$1"
     echo "Running $f"
@@ -24,7 +24,14 @@ done
 
 status=0
 for pid in $pids; do
-    wait "$pid" || status=1
+    wait -n
+    code=$?
+    if [ $code -ne 0 ]; then
+        status=$code
+        echo "Stopping tests due to failure..."
+        kill $pids 2>/dev/null
+        break
+    fi
 done
 
 exit $status
