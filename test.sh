@@ -24,7 +24,7 @@ done
 
 status=0
 for pid in $pids; do
-    wait -n
+    wait "$pid"
     code=$?
     if [ $code -ne 0 ]; then
         status=$code
