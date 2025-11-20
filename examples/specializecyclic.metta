@@ -1,0 +1,10 @@
+(= (f1 $f $a) (if (< $a 0)
+                  ($f nevercalled 42)
+                  (if (== $a 0) 
+                      (f2 $f (- $a 1))
+                      finish)))
+(= (f2 $f $a) (if (< $a 0)
+                  ($f nevercalled 42)
+                  (f1 $f $a)))
+
+!(test (f1 + 2) finish)
