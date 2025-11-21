@@ -16,6 +16,12 @@
 
 !(test (map-flat3 (p1 (1 2))) (2 3))
 
+(: map-flat4 (-> Expression %Undefined%))
+(= (map-flat4 ($v ($f ()))) ())
+(= (map-flat4 ($v ($f (cons $x $xs)))) (cons ($f $x) (map-flat4 ($v ($f $xs)))))
+
+!(test (map-flat4 (x (p1 (1 2)))) (2 3))
+
 (= (wrapper $f $list) (map-flat $f $list))
 
 !(test (wrapper (+ 1) (1 2 3)) (2 3 4))
