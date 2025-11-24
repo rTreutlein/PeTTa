@@ -1,4 +1,4 @@
-!(import &self ../lib/lib_roman)
+!(import! &self ../lib/lib_roman)
 ;Test hihger order functions
 !(test (map-flat (+ 1) (1 2 3)) (2 3 4))
 !(test (map-nested (+ 1) (1 (2 3))) (2 (3 4)))
@@ -16,14 +16,16 @@
 !(test (\== (1 2 3) (2 3 4)) (1))
 !(test (\=a (1 2 $a) (2 $a 4)) (1))
 
-!(test (\=/ (1 2 3) ($a 3 4)) (2))
-!(test (\==/ (1 2 3) (2 3 4)) (1))
-!(test (\=a/ (1 2 $a) (2 $a 4)) (1))
+!(test (\=/ (1 2 3) ($a 3 4)) (2 1 3 4))
+!(test (\==/ (1 2 3) (2 3 4)) (1 2 3 4))
+!(test (\=a/ (1 2 $a) (2 $a 4)) (1 2 $a 4))
 
 ;Test composition
 
-(= (mfail $x) (empty))
+!(test (. (+ 1) (* 2) 1) 4)
+!(test (&&& (+ 2) (* 2) 1) (3 2))
 
+(= (mfail $x) (empty))
 !(test (collapse (&^& (+ 1) (mfail) 1)) (2))
 
 ;Test reverse function matching
