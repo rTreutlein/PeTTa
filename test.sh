@@ -28,7 +28,7 @@ declare -A pid_to_file
 for f in ./examples/*.metta; do
     base=$(basename "$f")
     case "$base" in
-        repl.metta|gpt.metta|torch.metta|greedy_chess.metta|zmorkspace*.metta)
+        repl.metta|gpt.metta|torch.metta|greedy_chess.metta|zmorkspace*.metta|git_import.metta)
             continue ;;
     esac
 
