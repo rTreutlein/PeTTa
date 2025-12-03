@@ -10,4 +10,4 @@ SWI-Prolog
 
 Example run:
 
-`time sh run.sh ./examples/minnars.metta`
+`time sh run.sh ./examples/nars_tuffy.metta`
