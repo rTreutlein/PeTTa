@@ -22,7 +22,8 @@
 
 ;Test composition
 
-!(test (. (+ 1) (* 2) 1) 4)
+!(test (. (+ 1) (* 2) 1) 3)
+!(test (.: (+ 1) + 2 3) 6)
 !(test (&&& (+ 2) (* 2) 1) (3 2))
 
 (= (mfail $x) (empty))
