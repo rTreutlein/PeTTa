@@ -11,6 +11,8 @@
 :- use_module(library(yall), except([(/)/3])).
 :- use_module(library(apply)).
 :- use_module(library(apply_macros)).
+:- use_module(library(process)).
+:- use_module(library(filesex)).
 :- current_prolog_flag(argv, Argv),
    ( member(mork, Argv) -> ensure_loaded([parser, translator, filereader, '../mork_ffi/morkspaces', spaces])
                          ; ensure_loaded([parser, translator, filereader, spaces])).
@@ -236,7 +238,12 @@ assertaPredicate(G, true) :- asserta(G).
 retractPredicate(G, true) :- retract(G), !.
 retractPredicate(_, false).
 
-%%% Registration: %%%
+%%% Library / Import: %%%
+ensure_metta_ext(Path, Path) :- file_name_extension(_, metta, Path), !.
+ensure_metta_ext(Path, PathWithExt) :- file_name_extension(Path, metta, PathWithExt).
+
+library(X, Path) :- library_path(Base), atomic_list_concat([Base, '/', X], Path).
+
 'import!'(Space, File, true) :- atom_string(File, SFile),
                                 working_dir(Base),
                                 ( file_name_extension(ModPath, 'py', SFile)
@@ -245,9 +252,14 @@ retractPredicate(_, false).
                                      file_base_name(ModPath, ModuleName),
                                      py_call(sys:path:append(Dir), _),
                                      py_call(builtins:'__import__'(ModuleName), _)
-                                   ; atomic_list_concat([Base, '/', SFile, '.metta'], Path),
-                                     load_metta_file(Path, _, Space) ).
+                                   ; ( Path = SFile
+                                     ; atomic_list_concat([Base, '/', SFile], Path)
+                                     ),
+                                     ensure_metta_ext(Path, PathWithExt),
+                                     exists_file(PathWithExt), !,
+                                     load_metta_file(PathWithExt, _, Space) ).
 
+%%% Registration: %%%
 :- dynamic fun/1.
 register_fun(N) :- (fun(N) -> true ; assertz(fun(N))).
 unregister_fun(N/Arity) :- retractall(fun(N)),
@@ -265,5 +277,5 @@ unregister_fun(N/Arity) :- retractall(fun(N)),
                           'pow-math', 'sqrt-math', 'sort-atom','abs-math', 'log-math', 'trunc-math', 'ceil-math',
                           'floor-math', 'round-math', 'sin-math', 'cos-math', 'tan-math', 'asin-math','random-int','random-float',
                           'acos-math', 'atan-math', 'isnan-math', 'isinf-math', 'min-atom', 'max-atom',
-                          'foldl-atom', 'map-atom', 'filter-atom','current-time','format-time',
+                          'foldl-atom', 'map-atom', 'filter-atom','current-time','format-time', library, exists_file,
                           import_prolog_function, 'Predicate', callPredicate, assertaPredicate, assertzPredicate, retractPredicate]).
