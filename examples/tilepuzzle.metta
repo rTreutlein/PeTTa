@@ -166,29 +166,13 @@
     $_4 $_5 $_6
     $_7 ___ $_8))
 
-(= (enqueue $E (queue $In $Out))
-   (queue (cons $E $In) $Out))
+!(import! &self ../lib/lib_datastructures)
 
-(= (dequeue $E (queue $In (cons $E $Out)))
-   (queue $In $Out))
-
-(= (dequeue $E (queue $In ()))
-   (let (cons $E $R) (reverse $In)
-        (queue () $R)))
-
-;Add item to space without duplicates (cheap exists check due to 'once' despite 'collapse')
-!(add-atom &dup (dummy))
-(= (add-unique-or-fail $Atom)
-   (let $st (s (repra $Atom))
-        (if (== () (collapse (once (match &dup $st True))))
-            (add-atom &dup $st)
-            (empty))))
-
-(= (bfs_loop (queue () ()) $N0) $N0)
+(= (bfs_loop (empty-queue) $N0) $N0)
 (= (bfs_loop $Q $N0)
    (let* (($Q1 (once (dequeue $S $Q)))
           ($Ln (collapse (let* (($Snew (move $S $_))
-                                ($2 (add-unique-or-fail $Snew)))
+                                ($2 (add-unique-or-fail &dup $Snew)))
                                $Snew)))
           ($Q2 (foldl enqueue $Ln $Q1))
           ($N1 (+ $N0 1)))
@@ -196,7 +180,7 @@
 
 (= (bfs_all $Start)
    (let* (($Pt (add-unique-item-or-empty $Start))
-          ($Q1 (enqueue $Start (queue () ()))))
+          ($Q1 (enqueue $Start (empty-queue))))
         (bfs_loop $Q1 0)))
 
 !(test (let $x (bfs_all (___ 1 2 3 4 5 6 7 8)) $x) 181441)
