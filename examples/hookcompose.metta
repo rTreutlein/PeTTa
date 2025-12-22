@@ -12,4 +12,4 @@
        (let $x (cons $f $args) (mreduce $x))
        ($f (compose $rest $args))))
 
-!(compose (p1 p2) (1))
+!(test (compose (p1 p2) (1)) 4)
