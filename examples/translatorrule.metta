@@ -1,6 +1,5 @@
-(: compilecons42 (-> Expression Expression))
 (= (compilecons42 $arg)
-   (quote (((cons 42 $arg $out)) $out)))
+   (cons 42 $arg))
 
 !(add-translator-rule! compilecons42)
 
