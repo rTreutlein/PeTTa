@@ -1,15 +1,7 @@
-(= (p1) (+ 1))
-(= (p2) (+ 2))
+(: mymacro (-> Expression Expression))
+(= (mymacro $arg)
+   (quote (((cons 42 $arg $out)) $out)))
 
-(: mreduce (-> Expression Atom))
-(= (mreduce $arg) (quote (((reduce $arg $out)) $out)))
+!(set_hook mymacro)
 
-!(set_hook mreduce)
-
-(: compose (-> Expression Atom Atom))
-(= (compose (cons $f $rest) $args)
-   (if (== $rest ())
-       (let $x (cons $f $args) (mreduce $x))
-       ($f (compose $rest $args))))
-
-!(test (compose (p1 p2) (1)) 4)
+!(test (mymacro (43)) (42 43))
