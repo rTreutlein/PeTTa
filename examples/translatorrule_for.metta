@@ -1,7 +1,7 @@
 (: for (-> Expression Expression Expression Expression))
 (= (for $var $collection $body)
    (quote (let $var (superpose $collection)
-                               $body)))
+                    $body)))
 
 !(add-translator-rule! for)
 
