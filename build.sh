@@ -1,4 +1,11 @@
+git clone https://github.com/patham9/mork_ffi
 cd ./mork_ffi
-RUSTFLAGS="-C target-cpu=native" cargo build -p mork_ffi --release
-nm -D ./target/release/libmork_ffi.so | grep rust_mork
-gcc -shared -fPIC -o morklib.so mork.c $(pkg-config --cflags --libs swipl)
+git pull
+sh build.sh
+
+cd ..
+
+git clone https://github.com/patham9/faiss_ffi
+cd ./faiss_ffi
+git pull
+sh build.sh

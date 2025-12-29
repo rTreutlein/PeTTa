@@ -27,7 +27,7 @@
 ;%%% HIJACK PROLOG CONSULT TO LOAD PREDICATES AS FUNCTIONS %%%
 
 ;Let's allow us to use Prolog's consult and import_prolog_function in combination to import functions from a pl file:
-!(import! &self ../lib/lib_prolog)
+!(import! &self ../lib/lib_import)
 
 ;Let's use it to import myfunc, a predicate in function form convention defined as Prolog code in prologimport_example.pl:
 !(import_prolog_functions_from_file "./examples/prologimport_example.pl" (myfunc))
