@@ -1,7 +1,3 @@
-.aider*
-mork_ffi/target
 python/__pycache__
-mork_ffi/morklib.so
-mork_ffi/Cargo.lock
+python/HE/__pycache__
 python/tests/__pycache__
-.vscode/
