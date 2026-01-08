@@ -1,6 +1,8 @@
 ## PeTTa
 
-Efficient MeTTa in Prolog.
+Efficient MeTTa language implementation in Prolog.
+
+Please check out the [Wiki](https://github.com/patham9/PeTTa/wiki) for more information.
 
 ### Dependencies
 
@@ -12,6 +14,18 @@ Efficient MeTTa in Prolog.
 Example run:
 
 `time sh run.sh ./examples/nars_tuffy.metta`
+
+### MORK and FAISS spaces
+
+If MORK and FAISS is installed, execute `sh build.sh` to support MORK-based atom spaces and FAISS-based atom-vector spaces.
+
+The following projects are cloned and built by build.sh:
+
+**Repository:** [mork_ffi](https://github.com/patham9/mork_ffi) dependent on [trueagi-io/mork](https://github.com/trueagi-io/mork)
+
+**Repository:** [faiss_ffi](https://github.com/patham9/faiss_ffi) dependent on [facebookresearch/faiss](https://github.com/facebookresearch/faiss)
+
+## Notebooks, Servers, Browser
 
 ### Jupyter Notebook Support
 
@@ -31,4 +45,18 @@ cd jupyter-petta-kernel
 ./install.sh
 ```
 
-See the [jupyter-petta-kernel README](https://github.com/trueagi-io/jupyter-petta-kernel/blob/main/README.md) for detailed installation instructions and usage.
+Please see the [jupyter-petta-kernel README](https://github.com/trueagi-io/jupyter-petta-kernel/blob/main/README.md) for detailed installation instructions and usage.
+
+### MeTTa server
+
+A HTTP server running MeTTa code is also available:
+
+**Repository:** [MettaWamJam](https://github.com/jazzbox35/MettaWamJam)
+
+Please see the [MettaWamJam README](https://github.com/jazzbox35/MettaWamJam/blob/main/README.md) for detailed installation instructions and usage.
+
+### MeTTa in WASM
+
+Since Swi-Prolog can be compiled to Web Assembly, one can embed PeTTa into websites.
+
+The relevant files for invocation from html files are [swipl-web.wasm](https://wasm.swi-prolog.org/wasm/swipl-web.wasm) and [swipl-webl.js](https://wasm.swi-prolog.org/wasm/swipl-web.js).
