@@ -59,4 +59,4 @@ Please see the [MettaWamJam README](https://github.com/jazzbox35/MettaWamJam/blo
 
 Since Swi-Prolog can be compiled to Web Assembly, one can embed PeTTa into websites.
 
-The relevant files for invocation from html files are [swipl-web.wasm](https://wasm.swi-prolog.org/wasm/swipl-web.wasm) and [swipl-webl.js](https://wasm.swi-prolog.org/wasm/swipl-web.js).
+Please see [Execution-in-browser](https://github.com/patham9/PeTTa/wiki/Execution-in-browser) for more information.
