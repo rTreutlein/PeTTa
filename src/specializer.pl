@@ -5,6 +5,11 @@ maybe_specialize_call(HV, AVs, Out, Goal) :- setup_call_cleanup( (catch(nb_getva
                                                                  specialize_call(HV, AVs, Out, Goal),
                                                                  (Prev == true -> nb_setval(specneeded,Prev)) ).
 
+% Helper predicate to replace all variables with 'VAR'
+replace_vars_with_var(Var, 'VAR') :- var(Var), !.
+replace_vars_with_var(Term, NewTerm) :- (is_list(Term) -> maplist(replace_vars_with_var, Term, NewTerm)
+                                                        ;  Term = NewTerm).
+
 %Specialize a call by creating and translating a specialized version of the MeTTa code:
 specialize_call(HV, AVs, Out, Goal) :- %1.  Skip specialization when HV is the function currently being compile:
                                        \+ catch(nb_getval(HV, HV), _, HV = none),
@@ -12,15 +17,15 @@ specialize_call(HV, AVs, Out, Goal) :- %1.  Skip specialization when HV is the f
                                        catch(nb_getval(HV, MetaList0), _, fail),
                                        copy_term(MetaList0, MetaList),
                                        %3. Copy all clause variables eligible for specialization across all meta-clauses:
-                                       setof(HoVar, ArgsNorm^BodyExpr^HoBinds^HoBindsPerArg^
+                                       bagof(HoVar, ArgsNorm^BodyExpr^HoBinds^HoBindsPerArg^
                                                     ( member(fun_meta(ArgsNorm, BodyExpr), MetaList),
                                                       maplist(specializable_vars(BodyExpr), AVs, ArgsNorm, HoBinds),
                                                       member(HoBindsPerArg, HoBinds),
                                                       member(HoVar, HoBindsPerArg),
                                                       nonvar(HoVar) ), BindSet),
                                        %4. Build the specialization name from the concrete higher-order bind set:
-                                       numbervars(BindSet),
-                                       format(atom(SpecName), "~w_Spec_~W",[HV, BindSet, [numbervars(true)]]),
+                                       replace_vars_with_var(BindSet, CleanBindSet),
+                                       format(atom(SpecName), "~w_Spec_~w",[HV, CleanBindSet]),
                                        %5. Specialize, but only if not already specialized:
                                        ( ho_specialization(HV, SpecName)
                                          ; ( %5.1. Otherwise register the specialization:
