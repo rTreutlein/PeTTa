@@ -42,3 +42,11 @@
         (fold-nested $f ($f $init $x) $xs)))
 
 !(test (fold-nested + 0 (1 (2 3))) 6)
+
+(= (higher-order-fun $a $b) (($a 1) ($b 1)))
+
+(= (fun2) (higher-order-fun (+ 1) (* 1)))
+(= (fun3) (higher-order-fun (* 1) (+ 1)))
+
+!(test (fun2) (2 1))
+!(test (fun3) (1 2))
