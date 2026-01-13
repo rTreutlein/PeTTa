@@ -13,6 +13,10 @@
 !(test (get-type >) (-> Number Number Bool))
 !(test (get-type >=) (-> Number Number Bool))
 
+;; Type definitions of equality and negated equality operators
+!(test (get-type ==) (-> $a $b Bool))
+!(test (get-type !=) (-> $a $b Bool))
+
 ;; Test type definitions of common mathematical functions
 !(test (get-type pow-math) (-> Number Number Number))
 !(test (get-type sqrt-math) (-> Number Number))
@@ -30,7 +34,16 @@
 !(test (get-type atan-math) (-> Number Number))
 !(test (get-type min-atom) (-> $a Number))
 !(test (get-type max-atom) (-> $a Number))
+!(test (get-type min) (-> Number Number Number))
+!(test (get-type max) (-> Number Number Number))
+!(test (get-type exp) (-> Number Number))
 
 ;; Test type definitions of isnan and isinf predicates
 !(test (get-type isnan-math) (-> Number Bool))
 !(test (get-type isinf-math) (-> Number Bool))
+
+;; Type definitions of boolean operators
+!(test (get-type and) (-> Bool Bool Bool))
+!(test (get-type or) (-> Bool Bool Bool))
+!(test (get-type not) (-> Bool Bool))
+!(test (get-type xor) (-> Bool Bool Bool))
