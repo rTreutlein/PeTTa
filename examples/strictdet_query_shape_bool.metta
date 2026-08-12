@@ -1,18 +1,25 @@
 ; Representative outer control-flow shape used by PeTTaChainer's
 ; query-needs-temp-rule?.
-; The nonempty guard makes car/cdr safe, reflection and alpha membership
-; return proper Booleans, and every branch constructs a Bool exactly once.
+; The nonempty guard makes decons exactly-one, its result is an exact
+; two-field list, and every branch constructs a Bool exactly once.
+(: statement-children (-[det]-> Expression Expression))
+(= (statement-children $items) $items)
+
+(: compound-direct-query-bundle? (-[det]-> Expression Bool))
+(= (compound-direct-query-bundle? $items) (not (== $items ())))
+
 (: query-shape? (-[det]-> Expression Bool))
 (= (query-shape? $term)
    (if (and
           (is-expr $term)
           (not (== $term ())))
-      (let $head (car-atom $term)
-         (and
-            (not (is-var $head))
-            (and
-               (is-alpha-member $head (And Or LikelierThan))
-               (not (== (cdr-atom $term) ())))))
+      (let ($head $tail) (decons $term)
+         (if (is-var $head)
+            false
+            (if (is-alpha-member $head (And Or LikelierThan))
+               (compound-direct-query-bundle?
+                  (statement-children $tail))
+               false)))
       false))
 
 !(test (query-shape? (And a b)) true)

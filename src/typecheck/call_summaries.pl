@@ -184,12 +184,14 @@ decons_builtin('decons-atom').
 
 builtin_mode(F/1, [req(0, nonempty_list)],
              [ensure(result, expr), ensure(result, proper_list),
-              ensure(result, nonempty_list), ensure(result, nonvar)],
+              ensure(result, nonempty_list),
+              ensure(result, proper_list_length(2)), ensure(result, nonvar)],
              card(1, 1), [pure], 100) :-
     decons_builtin(F).
 builtin_mode(F/1, [],
              [ensure(result, expr), ensure(result, proper_list),
-              ensure(result, nonempty_list), ensure(result, nonvar)],
+              ensure(result, nonempty_list),
+              ensure(result, proper_list_length(2)), ensure(result, nonvar)],
              card(0, 1), [pure], 0) :-
     decons_builtin(F).
 
@@ -381,6 +383,8 @@ known_fact(ground).
 known_fact(proper_bool).
 known_fact(proper_list).
 known_fact(nonempty_list).
+known_fact(proper_list_length(Length)) :-
+    integer(Length), Length >= 0.
 known_fact(duplicate_free).
 known_fact(expr).
 known_fact(number).
@@ -524,7 +528,13 @@ test(decons_fallback_is_semidet) :-
     select_builtin_mode(decons, 1, has_none, Posts, Card, _),
     assertion(Card == card(0, 1)),
     assertion(post_fact(Posts, result, proper_list)),
-    assertion(post_fact(Posts, result, nonempty_list)).
+    assertion(post_fact(Posts, result, nonempty_list)),
+    assertion(post_fact(Posts, result, proper_list_length(2))).
+
+test(decons_nonempty_mode_is_det_and_exact_pair) :-
+    select_builtin_mode(decons, 1, has_nonempty, Posts, Card, _),
+    assertion(Card == card(1, 1)),
+    assertion(post_fact(Posts, result, proper_list_length(2))).
 
 test(unknown_builtin_has_no_summary, [fail]) :-
     select_builtin_mode('__missing__', 0, has_none, _, _, _).

@@ -22,8 +22,9 @@ The checker keeps three independent kinds of information.
 * `type(T)` is a value-type claim.  Examples are `type('Bool')` and
   `type(['List', T])`.
 * Shape and instantiation facts describe the value available at a program
-  point: `proper_bool`, `proper_list`, `nonempty_list`, `nonvar`, `ground`,
-  and related facts.  A value of type `Bool` is not necessarily a
+  point: `proper_bool`, `proper_list`, `nonempty_list`,
+  `proper_list_length(N)`, `nonvar`, `ground`, and related facts.  A value of
+  type `Bool` is not necessarily a
   `proper_bool`; it may still be an unbound relational variable.
 * `card(Min, Max)` describes the number of solutions.  `card(1, 1)` is det,
   `card(0, 1)` is semidet, `card(1, many)` is multi, and `card(0, many)` is
@@ -107,6 +108,14 @@ record, so facts from a deferred body cannot escape into the enclosing clause
 and facts from one lambda branch cannot certify another. Unsupported lowering
 falls back to the legacy checker per clause; unsupported IR nodes preserve no
 child-flow facts because their children are not yet known to execute.
+
+The analyzer also closes `proper_list` plus exclusion of `()` to
+`nonempty_list`, represents variable-headed fixed-width list patterns as
+positional patterns, and records `decons`'s exact two-field result. During the
+migration, the legacy determinism walker may consume the retained cardinality
+of an exact registered-builtin source occurrence; user-function cards are not
+used for that purpose because they can still contain the declaration being
+validated.
 
 The legacy determinism walker, whole-clause exhaustiveness checks, contextual
 `case`/`let` pattern checker, and runtime-boundary guards remain authoritative

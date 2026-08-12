@@ -7,6 +7,7 @@
             with_unified_preanalyzed_form/1,
             current_unified_clause_analysis/5,
             current_unified_source_variable/1,
+            unified_builtin_call_card/2,
             unified_function_result_fact/3,
             unified_function_summary/6,
             unified_checker_invalidate_event/1
@@ -23,6 +24,7 @@ result-shape decisions come from `ir_analyzer` records.
 :- use_module(abstract_domain).
 :- use_module(ir_analyzer).
 :- use_module(relational_ir).
+:- use_module(builtin_registry).
 :- use_module(unified_checker_cache).
 :- use_module(library(lists)).
 :- use_module(library(ordsets)).
@@ -233,6 +235,39 @@ current_unified_source_variable(Var) :-
     current_unified_clause_analysis(_, _, Env, _, _),
     member(binding(_, Stored), Env),
     Stored == Var, !.
+
+% Project the cardinality proved for this source builtin call.  Nonground
+% source identity is exact, but Prolog's `==` cannot distinguish separately
+% built compounds which share the same variables.  Therefore every matching
+% origin must carry the same card before the legacy walker may consume it.
+% This is deliberately restricted to registered builtins: user-function
+% summaries may contain their declared contract while that same contract is
+% still being validated, whereas builtin modes are independent semantic facts.
+unified_builtin_call_card(SourceCall, Card) :-
+    nonvar(SourceCall),
+    SourceCall = [F|Args], atom(F), is_list(Args),
+    length(Args, Arity),
+    once(builtin_spec(F/Arity, _, _, _, _, _)),
+    current_unified_clause_analysis(_, IR, _, Origins, Analysis),
+    % A node-local upgrade must not hide fallibility elsewhere in its
+    % enclosing control construct (notably a repeated-variable let pattern).
+    % The legacy walker still checks every argument/call; this retained body
+    % card is the independent proof that the upgraded path is globally total.
+    analysis_card(Analysis, card(1,1)),
+    findall(Id,
+            ( origin_result_id(Origins, SourceCall, Id),
+              ir_node(IR, call(CallId, F, IRArgs)),
+              CallId == Id,
+              length(IRArgs, Arity) ),
+            Ids0),
+    sort(Ids0, Ids),
+    Ids = [FirstId|RestIds],
+    analysis_node_card(Analysis, FirstId, Card),
+    maplist(node_has_card(Analysis, Card), RestIds).
+
+node_has_card(Analysis, Card, Id) :-
+    analysis_node_card(Analysis, Id, StoredCard),
+    StoredCard == Card.
 
 unified_function_result_fact(F, N, Fact) :-
     current_unified_clause_analysis(_, _, _, _, _),
@@ -756,6 +791,8 @@ exportable_fact(type(Type)) :- ground(Type).
 exportable_fact(proper_bool).
 exportable_fact(proper_list).
 exportable_fact(nonempty_list).
+exportable_fact(proper_list_length(Length)) :-
+    integer(Length), Length >= 0.
 exportable_fact(expr).
 exportable_fact(number).
 exportable_fact(ground).
@@ -1172,7 +1209,65 @@ variant_member_local(X, [_|Ys]) :- variant_member_local(X, Ys).
 
 test(open_types_do_not_cross_summary_boundary) :-
     \+ exportable_fact(type(_)),
-    exportable_fact(type('Bool')).
+    exportable_fact(type('Bool')),
+    \+ exportable_fact(proper_list_length(_)),
+    exportable_fact(proper_list_length(2)).
+
+test(exact_builtin_call_card_uses_retained_flow_analysis) :-
+    Call = [decons, Term],
+    Body = [if,
+            [and, ['is-expr', Term], [not, [==, Term, []]]],
+            [let, [Head, Tail], Call, true],
+            false],
+    Source = [=, [bridge_decons_card, Term], Body],
+    try_lower_source_clause(Source, lowered(IR, Env, Origins)),
+    state_empty(State),
+    analyze_ir(IR, State, Analysis),
+    Record = clause_record(Source, IR, Env, Origins, Analysis),
+    copy_term(Call, CopiedCall),
+    setup_call_cleanup(
+        push_current_clause(Record, Saved),
+        ( unified_builtin_call_card(Call, card(1,1)),
+          \+ unified_builtin_call_card(CopiedCall, _) ),
+        pop_current_clause(Saved)),
+    var(Term), var(Head), var(Tail).
+
+test(node_card_does_not_hide_fallible_positional_match) :-
+    Call = [decons, Term],
+    Body = [if,
+            [and, ['is-expr', Term], [not, [==, Term, []]]],
+            [let, [Field, Field], Call, true],
+            false],
+    Source = [=, [bridge_decons_repeated, Term], Body],
+    try_lower_source_clause(Source, lowered(IR, Env, Origins)),
+    state_empty(State),
+    analyze_ir(IR, State, Analysis),
+    analysis_card(Analysis, card(0,1)),
+    Record = clause_record(Source, IR, Env, Origins, Analysis),
+    setup_call_cleanup(
+        push_current_clause(Record, Saved),
+        \+ unified_builtin_call_card(Call, _),
+        pop_current_clause(Saved)),
+    var(Term), var(Field).
+
+test(ambiguous_equal_source_calls_require_one_card) :-
+    First = [decons, Term],
+    Second = [decons, Term],
+    Source = [=, [bridge_decons_ambiguous, Term],
+              [progn,
+               [if, [and, ['is-expr', Term], [not, [==, Term, []]]],
+                First, false],
+               Second]],
+    try_lower_source_clause(Source, lowered(IR, Env, Origins)),
+    state_empty(State),
+    analyze_ir(IR, State, Analysis),
+    Record = clause_record(Source, IR, Env, Origins, Analysis),
+    setup_call_cleanup(
+        push_current_clause(Record, Saved),
+        ( \+ unified_builtin_call_card(First, card(1,1)),
+          \+ unified_builtin_call_card(Second, card(1,1)) ),
+        pop_current_clause(Saved)),
+    var(Term).
 
 test(unsupported_lowering_is_a_clause_local_fallback) :-
     Source = [=, [fallback_case, X], [case, X, [bad]]],

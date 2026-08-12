@@ -10,6 +10,7 @@
             analysis_trace/2,
             analysis_result_has_fact/2,
             analysis_edge_state/4,
+            analysis_node_card/3,
             analysis_node_state/3,
             refine_result/6
           ]).
@@ -100,6 +101,10 @@ analysis_node_state(Analysis, NodeId, State) :-
     analysis_trace(Analysis, Trace),
     member(node(NodeId, _, State), Trace), !.
 
+analysis_node_card(Analysis, NodeId, Card) :-
+    analysis_trace(Analysis, Trace),
+    member(node(NodeId, Card, _), Trace), !.
+
 %!  refine_result(+IR, +TestId, +Truth, +State0, +Options, -State) is semidet.
 %
 %   Apply only the facts established on one result edge.  Failure means that
@@ -117,9 +122,10 @@ refine_result(IR, TestId, Truth, State0, Options, State) :-
 
 % -- Node interpretation --------------------------------------------------
 
-analyze_node(value(Id, source_var), State, _,
+analyze_node(value(Id, Flavor), State, _,
              out(yes, Id, card(1,1), State, [], [], [],
-                 [node(Id, card(1,1), State)])) :- !.
+                 [node(Id, card(1,1), State)])) :-
+    ( Flavor == source_var ; Flavor = pattern_var(_) ), !.
 analyze_node(value(Id, literal(Value)), State0, _, Out) :- !,
     literal_facts(Value, Facts),
     add_facts_flow(reachable(State0), Id, Facts, Flow),
@@ -400,12 +406,18 @@ constructor_facts(cons, [_, Tail], State, _, Facts) :- !,
     ; Facts = [nonvar] ).
 constructor_facts(pattern_cons, _, _, _,
                   [expr, proper_list, nonempty_list, nonvar]) :- !.
+constructor_facts(positional_pattern, ChildIds, _, _, Facts) :- !,
+    length(ChildIds, Length),
+    Facts = [proper_list_length(Length), expr, proper_list, nonvar].
 constructor_facts(pattern(Tag), ChildIds, State, _, Facts) :- !,
     list_constructor_facts([Tag], ChildIds, State, Facts).
 constructor_facts(typed_pattern(_), _, _, _, [nonvar]) :- !.
 constructor_facts(_, _, _, _, [nonvar]).
 
 list_constructor_facts(Prefix, ChildIds, State, Facts) :-
+    length(Prefix, PrefixLength),
+    length(ChildIds, ChildLength),
+    Length is PrefixLength + ChildLength,
     append(Prefix, Values, Full),
     ( maplist(id_literal(State), ChildIds, Values)
       -> literal_list_derived_facts(Full, Derived),
@@ -413,9 +425,10 @@ list_constructor_facts(Prefix, ChildIds, State, Facts) :-
     ; all_ids_have(State, ChildIds, ground)
       -> Facts0 = [expr, proper_list, ground, nonvar]
     ; Facts0 = [expr, proper_list, nonvar] ),
-    ( Full = [_|_] -> Facts = [nonempty_list|Facts0]
-    ; ChildIds = [_|_] -> Facts = [nonempty_list|Facts0]
-    ; Facts = Facts0 ).
+    ( Full = [_|_] -> ShapeFacts = [nonempty_list|Facts0]
+    ; ChildIds = [_|_] -> ShapeFacts = [nonempty_list|Facts0]
+    ; ShapeFacts = Facts0 ),
+    Facts = [proper_list_length(Length)|ShapeFacts].
 
 assume_head_patterns([], State, _, reachable(State), [], [], []).
 assume_head_patterns([Pattern|Patterns], State0, Ctx, Flow,
@@ -462,6 +475,11 @@ match_edges(ValueId, Pattern, State0, Ctx, Success, Failure) :-
       -> pattern_failure(ValueId, Pattern, State0, Failure)
     ; Failure = unreachable ).
 
+pattern_reachability(_, value(_, pattern_var(fresh)), _, yes, no) :- !.
+pattern_reachability(ValueId, value(PatternId, pattern_var(existing)), _,
+                     yes, CanFail) :- !,
+    ( ValueId == PatternId -> CanFail = no ; CanFail = yes ).
+% Compatibility for manually constructed/older IR fixtures.
 pattern_reachability(_, value(_, source_var), _, yes, no) :- !.
 pattern_reachability(ValueId, value(_, literal(Value)), State,
                      CanSucceed, CanFail) :- !,
@@ -471,7 +489,31 @@ pattern_reachability(ValueId, construct(_, typed_pattern(_), [Pattern]), State,
     % A type annotation is a runtime restriction unless compatibility with the
     % scrutinee has been proved.  The inner wildcard alone is not exhaustive.
     pattern_reachability(ValueId, Pattern, State, CanSucceed, _).
+pattern_reachability(ValueId,
+                     construct(_, positional_pattern, Children), State,
+                     CanSucceed, CanFail) :- !,
+    length(Children, Length),
+    ( state_fact_matches(State, ValueId, proper_list_length(KnownLength)),
+      integer(KnownLength)
+      -> ( KnownLength =:= Length
+           -> CanSucceed = yes,
+              ( distinct_variable_patterns(Children)
+                -> CanFail = no
+              ; CanFail = yes )
+         ; CanSucceed = no, CanFail = yes )
+    ; CanSucceed = yes, CanFail = yes ).
 pattern_reachability(_, _, _, yes, yes).
+
+distinct_variable_patterns(Children) :-
+    maplist(variable_pattern_id, Children, Ids),
+    pairwise_distinct_ids(Ids).
+
+variable_pattern_id(value(Id, pattern_var(fresh)), Id).
+
+pairwise_distinct_ids([]).
+pairwise_distinct_ids([Id|Ids]) :-
+    \+ ( member(Other, Ids), Other == Id ),
+    pairwise_distinct_ids(Ids).
 
 literal_match_reachability(ValueId, Value, State, CanSucceed, CanFail) :-
     ( id_literal(State, ValueId, Known)
@@ -488,6 +530,9 @@ literal_match_reachability(ValueId, Value, State, CanSucceed, CanFail) :-
       ; CanFail = yes ) ).
 
 pattern_success(ValueId, value(PatternId, source_var), State0, _, Flow) :- !,
+    alias_ids(State0, ValueId, PatternId, State),
+    consistent_flow(State, Flow).
+pattern_success(ValueId, value(PatternId, pattern_var(_)), State0, _, Flow) :- !,
     alias_ids(State0, ValueId, PatternId, State),
     consistent_flow(State, Flow).
 pattern_success(ValueId, value(_, literal(Value)), State0, _, Flow) :- !,
@@ -513,6 +558,12 @@ pattern_success(ValueId, construct(_, pattern_cons, [Head, Tail]),
          flow_pattern_success(TailFlow, TailId, Tail, Ctx, TailMatched),
          flow_pattern_success(TailMatched, HeadId, Head, Ctx, Flow)
     ; Flow = unreachable ).
+pattern_success(ValueId, construct(_, positional_pattern, Children),
+                State0, Ctx, Flow) :- !,
+    length(Children, Length),
+    add_facts_flow(reachable(State0), ValueId,
+                   [proper_list_length(Length)], Shaped),
+    flow_patterns_self(Shaped, Children, Ctx, Flow).
 pattern_success(ValueId, construct(_, pattern(Tag), Children),
                 State0, Ctx, Flow) :- !,
     add_facts_flow(reachable(State0), ValueId,
@@ -605,11 +656,14 @@ refine_unify_success(A, B, State0, context(Options, Definitions), Flow) :-
 
 structural_pattern_node(construct(_, pattern(_), _)).
 structural_pattern_node(construct(_, pattern_cons, _)).
+structural_pattern_node(construct(_, positional_pattern, _)).
 structural_pattern_node(construct(_, typed_pattern(_), _)).
 
 pattern_node(construct(_, pattern(_), _)).
 pattern_node(construct(_, pattern_cons, _)).
+pattern_node(construct(_, positional_pattern, _)).
 pattern_node(construct(_, typed_pattern(_), _)).
+pattern_node(value(_, pattern_var(_))).
 pattern_node(value(_, source_var)).
 pattern_node(value(_, literal(_))).
 
@@ -791,7 +845,23 @@ add_facts_flow(reachable(State0), Id, Facts, Flow) :-
 
 add_state_facts([], _, State, State).
 add_state_facts(Facts, Id, State0, State) :-
-    state_add_facts(State0, Id, Facts, State).
+    state_add_facts(State0, Id, Facts, State1),
+    close_contextual_value_facts(Facts, Id, State1, State).
+
+% Unary implications such as nonempty_list -> proper_list live in
+% fact_implications/2.  The converse needs two facts: a proper list which is
+% known not to be [] must have at least one cell.  Run this closure whenever
+% either premise is newly added so it is independent of refinement order and
+% also applies to facts copied through aliases.
+close_contextual_value_facts(Added, Id, State0, State) :-
+    ( may_complete_nonempty_list(Added),
+      state_has_fact(State0, Id, proper_list),
+      state_has_fact(State0, Id, excluded_literal([]))
+      -> state_add_fact(State0, Id, nonempty_list, State)
+    ; State = State0 ).
+
+may_complete_nonempty_list(Facts) :- memberchk(proper_list, Facts), !.
+may_complete_nonempty_list(Facts) :- memberchk(excluded_literal([]), Facts).
 
 expand_facts(Facts, Expanded) :-
     expand_facts_(Facts, [], Expanded0),
@@ -810,6 +880,12 @@ fact_implications(type(Type), [domain([true,false])]) :-
 fact_implications(number, [type('Number'), ground, nonvar]).
 fact_implications(proper_list, [expr, nonvar]).
 fact_implications(nonempty_list, [proper_list, expr, nonvar]).
+fact_implications(proper_list_length(0),
+                  [literal([]), literal_list([]), proper_list, duplicate_free,
+                   expr, ground, nonvar]) :- !.
+fact_implications(proper_list_length(Length),
+                  [nonempty_list, proper_list, expr, nonvar]) :-
+    integer(Length), Length > 0, !.
 fact_implications(ground, [nonvar]).
 fact_implications(literal(true),
                   [type('Bool'), proper_bool, domain([true,false]),
@@ -822,7 +898,8 @@ fact_implications(literal(Value), [number, type('Number'), ground, nonvar]) :-
 fact_implications(literal(Value), [type('String'), ground, nonvar]) :-
     string(Value), !.
 fact_implications(literal([]),
-                  [literal_list([]), expr, proper_list, ground, nonvar]).
+                  [literal_list([]), proper_list_length(0), duplicate_free,
+                   expr, proper_list, ground, nonvar]).
 fact_implications(literal(Value), [ground, nonvar]) :- atomic(Value), !.
 fact_implications(literal(Value), Facts) :-
     is_list(Value), !,
@@ -833,8 +910,12 @@ fact_implications(literal_list(Value), Facts) :-
 fact_implications(_, []).
 
 list_literal_implications(Value, Peer, Facts) :-
-    Base = [Peer, expr, proper_list, nonvar],
-    ( ground(Value) -> Facts = [ground|Base] ; Facts = Base ).
+    length(Value, Length),
+    Base0 = [Peer, proper_list_length(Length), expr, proper_list, nonvar],
+    ( ground(Value) -> Base = [ground|Base0] ; Base = Base0 ),
+    ( Value == [] -> Nonempty = [] ; Nonempty = [nonempty_list] ),
+    ( duplicate_free_list(Value) -> Unique = [duplicate_free] ; Unique = [] ),
+    append([Nonempty, Unique, Base], Facts).
 
 literal_facts(Value, Facts) :-
     ( is_list(Value)
@@ -843,7 +924,9 @@ literal_facts(Value, Facts) :-
     ; Facts = [literal(Value)] ).
 
 literal_list_derived_facts(Values, Facts) :-
-    Base0 = [literal_list(Values), literal(Values), expr, proper_list, nonvar],
+    length(Values, Length),
+    Base0 = [proper_list_length(Length), literal_list(Values), literal(Values),
+             expr, proper_list, nonvar],
     ( ground(Values) -> Base = [ground|Base0] ; Base = Base0 ),
     ( Values == [] -> Nonempty = [] ; Nonempty = [nonempty_list] ),
     ( duplicate_free_list(Values) -> Unique = [duplicate_free] ; Unique = [] ),
@@ -872,6 +955,13 @@ inconsistent_state(State) :-
 inconsistent_value(State, Id) :-
     state_fact_matches(State, Id, literal(Value)),
     state_fact_matches(State, Id, excluded_literal(Value)), !.
+inconsistent_value(State, Id) :-
+    findall(Length,
+            ( state_fact_matches(State, Id, proper_list_length(Length)),
+              integer(Length) ),
+            Lengths0),
+    sort(Lengths0, Lengths),
+    Lengths = [_,_|_], !.
 inconsistent_value(State, Id) :-
     findall(Value, state_fact_matches(State, Id, literal(Value)), Values0),
     variant_dedup(Values0, Values),
@@ -1032,6 +1122,36 @@ test(open_type_fact_does_not_claim_bool) :-
     \+ analysis_result_has_fact(Analysis, type('Bool')),
     var(X).
 
+test(proper_list_excluding_empty_is_nonempty) :-
+    lower_expr(X, IR, Id, _),
+    state_empty(S0),
+    state_add_fact(S0, Id, proper_list, S1),
+    state_add_fact(S1, Id, excluded_literal([]), S2),
+    analyze_ir(IR, S2, Analysis),
+    analysis_state(Analysis, State),
+    state_has_fact(State, Id, nonempty_list),
+    var(X).
+
+test(excluding_empty_then_proper_list_is_nonempty) :-
+    state_empty(S0),
+    add_facts_flow(reachable(S0), value_id,
+                   [excluded_literal([])], reachable(S1)),
+    add_facts_flow(reachable(S1), value_id,
+                   [proper_list], reachable(State)),
+    state_has_fact(State, value_id, nonempty_list).
+
+test(nonempty_context_requires_both_exact_premises) :-
+    state_empty(S0),
+    add_facts_flow(reachable(S0), proper_only,
+                   [proper_list], reachable(S1)),
+    \+ state_has_fact(S1, proper_only, nonempty_list),
+    add_facts_flow(reachable(S1), exclusion_only,
+                   [excluded_literal([])], reachable(S2)),
+    \+ state_has_fact(S2, exclusion_only, nonempty_list),
+    add_facts_flow(reachable(S2), other_exclusion,
+                   [proper_list, excluded_literal(foo)], reachable(S3)),
+    \+ state_has_fact(S3, other_exclusion, nonempty_list).
+
 test(inconsistent_initial_state_is_unreachable) :-
     lower_expr(X, IR, Id, _),
     state_empty(S0),
@@ -1185,6 +1305,49 @@ test(is_member_duplicate_literal_is_multi) :-
     state_empty(S0), state_add_fact(S0, XId, nonvar, S1),
     analyze_ir(IR, S1, [resolve_call(test_call_resolver)], Analysis),
     analysis_card(Analysis, card(1,many)).
+
+test(guarded_decons_positional_destructure_is_det) :-
+    Source = [if,
+              [and, ['is-expr', Term], [not, [==, Term, []]]],
+              [let, [Head, Tail], [decons, Term],
+               [and, [not, ['is-var', Head]],
+                [not, [==, Tail, []]]]],
+              false],
+    lower_expr(Source, IR, _, _),
+    state_empty(S0), analyze_ir(IR, S0, Analysis),
+    analysis_card(Analysis, card(1,1)),
+    analysis_result_has_fact(Analysis, proper_bool),
+    var(Term), var(Head), var(Tail).
+
+test(decons_result_rejects_wrong_positional_width) :-
+    Source = [let, [A, B, C], [decons, Term], true],
+    lower_expr(Source, IR, _, Env),
+    env_var_id(Env, Term, TermId),
+    state_empty(S0),
+    state_add_fact(S0, TermId, nonempty_list, S1),
+    analyze_ir(IR, S1, Analysis),
+    analysis_card(Analysis, card(0,0)),
+    var(Term), var(A), var(B), var(C).
+
+test(repeated_positional_binder_remains_fallible) :-
+    Source = [let, [A, A], [decons, Term], true],
+    lower_expr(Source, IR, _, Env),
+    env_var_id(Env, Term, TermId),
+    state_empty(S0),
+    state_add_fact(S0, TermId, nonempty_list, S1),
+    analyze_ir(IR, S1, Analysis),
+    analysis_card(Analysis, card(0,1)),
+    var(Term), var(A).
+
+test(existing_positional_variable_remains_fallible) :-
+    Source = [let, [Head, Term], [decons, Term], true],
+    lower_expr(Source, IR, _, Env),
+    env_var_id(Env, Term, TermId),
+    state_empty(S0),
+    state_add_fact(S0, TermId, nonempty_list, S1),
+    analyze_ir(IR, S1, Analysis),
+    analysis_card(Analysis, card(0,1)),
+    var(Term), var(Head).
 
 test(unknown_call_is_not_deterministic) :-
     lower_expr([missing, 1], IR, _, _),

@@ -1163,7 +1163,12 @@ deterministic_expr_core([case, KeyExpr, PairsExpr], Result) :- !, case_expr_dete
 deterministic_expr_core([Head|Args], Result) :- ( atomic(Head), ( \+ atom(Head) ; \+ fun(Head) )
                                            ; is_list(Head) ), !,
                                            combine_determinism_list([Head|Args], Result).
-deterministic_expr_core([Head|Args], Result) :- atom(Head), !, deterministic_call_expr([Head|Args], Result).
+deterministic_expr_core(Expr, Result) :-
+    Expr = [Head|_], atom(Head), !,
+    % Keep the original source occurrence intact.  The unified IR origin map
+    % is identity based for nonground terms, so rebuilding [Head|Args] here
+    % would discard the exact call-site proof.
+    deterministic_call_expr(Expr, Result).
 deterministic_expr_core([Head|_], unknown(dynamic_head(Head))).
 
 %(map-atom L F), (foldl-atom L Init F) and (filter-atom L F): the data
@@ -1179,20 +1184,29 @@ closure_builtin_determinism(Name, List, F, M, DataArgs, Result) :-
          ; Result = unknown(undetermined_closure(Name, F)) )
     ; Result = unknown(open_list(Name, List)) ).
 
-deterministic_call_expr([Fun|Args], Result) :- atom(Fun), !,
-                                               length(Args, N),
-                                               call_site_determinism(Fun, N, Args, Det),
-                                               ( Det == nondet -> Result = nondeterministic(call(Fun))
-                                               ; Det == semidet, semidet_site_upgraded_to_det(Fun, N, Args)
-                                                 -> combine_determinism_list(Args, Result)
-                                               ; Det == semidet
-                                                 -> combine_determinism_list(Args, R0),
-                                                    combine_det_results(may_fail(call(Fun)), R0, Result)
-                                               ; Det == det -> combine_determinism_list(Args, Result)
-                                               ; det_closure_args_ok(Fun, N, Args), body_determinism_assuming(Fun, N, det)
-                                                 -> combine_determinism_list(Args, Result)
-                                               ; underapplied_closure(Fun, N) -> combine_determinism_list(Args, Result)
-                                               ; Result = unknown(undetermined_call(Fun)) ).
+deterministic_call_expr(Expr, Result) :-
+    Expr = [Fun|Args], atom(Fun), !,
+    length(Args, N),
+    ( unified_builtin_call_card(Expr, card(1,1))
+      -> % The analyzer proved the builtin mode at this flow-sensitive call
+         % site.  Retain the legacy argument walk: it supplies detailed
+         % diagnostics and prevents a declared user-call contract nested in
+         % an argument from becoming a circular determinism proof.
+         combine_determinism_list(Args, Result)
+    ; call_site_determinism(Fun, N, Args, Det),
+      ( Det == nondet -> Result = nondeterministic(call(Fun))
+      ; Det == semidet, semidet_site_upgraded_to_det(Fun, N, Args)
+        -> combine_determinism_list(Args, Result)
+      ; Det == semidet
+        -> combine_determinism_list(Args, R0),
+           combine_det_results(may_fail(call(Fun)), R0, Result)
+      ; Det == det -> combine_determinism_list(Args, Result)
+      ; det_closure_args_ok(Fun, N, Args),
+        body_determinism_assuming(Fun, N, det)
+        -> combine_determinism_list(Args, Result)
+      ; underapplied_closure(Fun, N)
+        -> combine_determinism_list(Args, Result)
+      ; Result = unknown(undetermined_call(Fun)) ) ).
 deterministic_call_expr(Expr, unknown(dynamic_call(Expr))).
 
 %Structural equality/unification builtins whose operands are DATA PATTERNS.

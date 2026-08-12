@@ -269,8 +269,9 @@ lower_case([Bad|_], _, _, _, _, _) :-
     throw(error(domain_error(case_pair, Bad), lower_expr/4)).
 
 % Patterns are inert unless a typed-pattern annotation explicitly wraps them.
-lower_pattern(Source, value(Id, source_var), Id, S0, S) :-
+lower_pattern(Source, value(Id, pattern_var(Role)), Id, S0, S) :-
     var(Source), !,
+    pattern_variable_role(Source, S0, Role),
     intern_source_var(Source, Id, S0, S).
 lower_pattern([], value(Id, literal([])), Id, S0, S) :- !,
     fresh_id(Id, S0, S).
@@ -288,6 +289,14 @@ lower_pattern([Cons, Head, Tail], construct(Id, pattern_cons, [HeadIR, TailIR]),
     fresh_id(Id, S0, S1),
     lower_pattern(Head, HeadIR, _, S1, S2),
     lower_pattern(Tail, TailIR, _, S2, S).
+% A variable in the first position is a field binder, not a constructor tag.
+% Preserve every field of such a fixed-width positional pattern so matching
+% can use exact list-shape facts and later body occurrences share the same IDs.
+lower_pattern([Head|Args],
+              construct(Id, positional_pattern, Children), Id, S0, S) :-
+    var(Head), is_list(Args), !,
+    fresh_id(Id, S0, S1),
+    lower_patterns([Head|Args], Children, _, S1, S).
 lower_pattern([Head|Args], construct(Id, pattern(Head), Children), Id, S0, S) :-
     is_list(Args), !,
     fresh_id(Id, S0, S1),
@@ -297,6 +306,10 @@ lower_pattern(Source, opaque(Id, pattern_compound(Name), Children), Id, S0, S) :
     compound_name_arguments(Source, Name, Args),
     fresh_id(Id, S0, S1),
     lower_patterns(Args, Children, _, S1, S).
+
+pattern_variable_role(Var, state(_, Env), existing) :-
+    env_var_id(Env, Var, _), !.
+pattern_variable_role(_, _, fresh).
 
 % `=/2` is the sole relation in this family whose successful result commits
 % bindings.  Definite structural syntax is therefore lowered as a pattern for
@@ -552,9 +565,9 @@ test(and_then_unify_exposes_structural_pattern_on_true_edge) :-
     IR = sequence([
              sequence([value(AnnotatedId, source_var),
                        construct(PatternId, pattern(:),
-                                 [value(ProofId, source_var),
-                                  value(StatementId, source_var),
-                                  value(TVId, source_var)]),
+                                 [value(ProofId, pattern_var(fresh)),
+                                  value(StatementId, pattern_var(fresh)),
+                                  value(TVId, pattern_var(fresh))]),
                        reify(EqualId, unify(AnnotatedId, PatternId))], EqualId),
              branch(EqualId,
                     call(_, 'statement-accepted?',
@@ -582,7 +595,7 @@ test(case_is_nested_try_match_with_typed_pattern) :-
     IR = sequence([value(XId, source_var),
                    try_match(XId,
                              construct(_, typed_pattern('Number'),
-                                       [value(YId, source_var)]),
+                                       [value(YId, pattern_var(fresh))]),
                              call(_, number_case, [value(YId, source_var)]),
                              try_match(XId,
                                        value(_, literal(other)),
@@ -595,22 +608,40 @@ test(case_is_nested_try_match_with_typed_pattern) :-
 test(let_star_is_nested_match) :-
     lower_expr(['let*', [[X, 1], [Y, X]], [pair, X, Y]], IR, _, _),
     IR = sequence([value(_, literal(1)),
-                   try_match(_, value(XId, source_var),
+                   try_match(_, value(XId, pattern_var(fresh)),
                              sequence([value(XId, source_var),
                                        try_match(XId,
-                                                 value(YId, source_var),
+                                                 value(YId, pattern_var(fresh)),
                                                  call(_, pair,
                                                       [value(XId, source_var),
                                                        value(YId, source_var)]),
                                                  opaque(_, no_match, []), _)], _),
                              opaque(_, no_match, []), _)], _), !.
 
+test(variable_head_list_pattern_is_positional) :-
+    Source = [let, [Head, Tail], [decons, Value], [pair, Head, Tail]],
+    lower_expr(Source, IR, _, Env),
+    IR = sequence([
+             call(ValueId, decons, [value(SourceValueId, source_var)]),
+             try_match(ValueId,
+                       construct(_, positional_pattern,
+                                 [value(HeadId, pattern_var(fresh)),
+                                  value(TailId, pattern_var(fresh))]),
+                       call(_, pair,
+                            [value(HeadId, source_var),
+                             value(TailId, source_var)]),
+                       opaque(_, no_match, []), _)], _),
+    env_var_id(Env, Value, SourceValueId),
+    env_var_id(Env, Head, HeadId),
+    env_var_id(Env, Tail, TailId),
+    HeadId \== TailId.
+
 test(clause_shape) :-
     lower_clause([=, [f, X], [data, X, 1]], IR, ClauseId, Env),
     IR = opaque(ClauseId, clause(f, [XId], BodyId),
                 [construct(_, head_patterns,
                            [construct(XId, typed_pattern(declared_arg(f, 1, 0)),
-                                      [value(SourceXId, source_var)])]),
+                                      [value(SourceXId, pattern_var(fresh))])]),
                  construct(BodyId, data,
                            [value(SourceXId, source_var), value(_, literal(1))])]),
     env_var_id(Env, X, SourceXId).
