@@ -120,7 +120,7 @@ mutation_seed_functions_all(Events, Seed) :-
             Seed0),
     sort(Seed0, Seed).
 
-notify_mutation_queue([], State, State).
+notify_mutation_queue([], State, State) :- !.
 notify_mutation_queue(Events, State0, State) :-
     affected_compiled_functions_all(Events, Functions),
     pending_recompile_functions(Functions, State0, PendingFunctions),
@@ -140,7 +140,7 @@ planned_recompile_functions(Events, State0, Functions) :-
     planned_recompile_functions_(Events, State0, [], Reversed),
     reverse(Reversed, Functions).
 
-planned_recompile_functions_([], _, Functions, Functions).
+planned_recompile_functions_([], _, Functions, Functions) :- !.
 planned_recompile_functions_(Events, State0, Acc0, Functions) :-
     affected_compiled_functions_all(Events, Affected),
     pending_recompile_functions(Affected, State0, Pending),
@@ -254,6 +254,8 @@ mutation_candidate_dependency(declaration_changed(alias, Name, added),
 mutation_candidate_dependency(declaration_changed(newtype, Name, added),
                               ctor_set(Name)).
 mutation_candidate_dependency(constructor_set_changed(Type, _), ctor_set(Type)).
+mutation_candidate_dependency(callable_changed(F), late_symbol(F)).
+mutation_candidate_dependency(callable_changed(F), late_call(F/_)).
 mutation_candidate_dependency(broad_mutation(_), _).
 
 prioritize_mutation_owner(declaration_changed(F/_, _), Functions, [F|Rest]) :-
@@ -334,6 +336,8 @@ mutation_dependency_matches(declaration_changed(alias, Name, added),
 mutation_dependency_matches(declaration_changed(newtype, Name, added),
                             ctor_set(Name)).
 mutation_dependency_matches(constructor_set_changed(Type, _), ctor_set(Type)).
+mutation_dependency_matches(callable_changed(F), late_symbol(F)).
+mutation_dependency_matches(callable_changed(F), late_call(F/_)).
 mutation_dependency_matches(broad_mutation(_), _).
 
 mutation_recompile_diagnostic(event_batch(Events), F) :- !,

@@ -13,3 +13,11 @@ swipl -q -g "load_files(['src/typecheck/abstract_domain.pl',
                         unified_checker_bridge]),
              call_summaries:validate_summary_table,
              halt"
+
+swipl -q -s src/metta.pl \
+   -s examples/unified_checker_lifecycle_tests.pl \
+   -g "run_tests([unified_checker_lifecycle]), halt" -- \
+   --strict --strict-det -s
+
+sh run.sh examples/strictdet_unified_cross_file_cache.metta \
+   --strict --strict-det -s >/dev/null

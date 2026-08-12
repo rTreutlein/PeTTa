@@ -787,7 +787,7 @@ add_facts_flow(unreachable, _, _, unreachable) :- !.
 add_facts_flow(reachable(State0), Id, Facts, Flow) :-
     expand_facts(Facts, Expanded),
     add_state_facts(Expanded, Id, State0, State),
-    consistent_flow(State, Flow).
+    consistent_value_flow(State, Id, Flow).
 
 add_state_facts([], _, State, State).
 add_state_facts(Facts, Id, State0, State) :-
@@ -856,26 +856,34 @@ consistent_flow(State, Flow) :-
     ( inconsistent_state(State) -> Flow = unreachable
     ; Flow = reachable(State) ).
 
+% add_facts_flow/4 receives an already-consistent reachable state and changes
+% only one immutable value entry.  Therefore only that entry can become newly
+% contradictory; rescanning every prior ID after each fact insertion made
+% consistency quadratic in long clauses.  Whole-state checks remain at input,
+% joins and alias operations.
+consistent_value_flow(State, Id, Flow) :-
+    ( inconsistent_value(State, Id) -> Flow = unreachable
+    ; Flow = reachable(State) ).
+
 inconsistent_state(State) :-
     state_value_id(State, Id),
+    inconsistent_value(State, Id), !.
+
+inconsistent_value(State, Id) :-
     state_fact_matches(State, Id, literal(Value)),
     state_fact_matches(State, Id, excluded_literal(Value)), !.
-inconsistent_state(State) :-
-    state_value_id(State, Id),
+inconsistent_value(State, Id) :-
     findall(Value, state_fact_matches(State, Id, literal(Value)), Values0),
     variant_dedup(Values0, Values),
     Values = [_,_|_], !.
-inconsistent_state(State) :-
-    state_value_id(State, Id),
+inconsistent_value(State, Id) :-
     state_fact_matches(State, Id, domain(Domain)),
     findall(V, state_fact_matches(State, Id, excluded_literal(V)), Excluded),
     domain_all_excluded(Domain, Excluded), !.
-inconsistent_state(State) :-
-    state_value_id(State, Id),
+inconsistent_value(State, Id) :-
     state_fact_matches(State, Id, variable),
     state_fact_matches(State, Id, nonvar), !.
-inconsistent_state(State) :-
-    state_value_id(State, Id),
+inconsistent_value(State, Id) :-
     state_fact_matches(State, Id, literal(Value)),
     state_fact_matches(State, Id, domain(Domain)),
     ground(Value), ground(Domain),
@@ -1204,5 +1212,25 @@ test(invalid_summary_target_is_conservative) :-
         [invalid_call_summary(invalid_target/1,
                               summary([ensure(arg(9), nonvar)],
                                       card(1,1), [pure]))]).
+
+test(local_consistency_matches_full_check_after_fact_addition) :-
+    state_empty(Empty),
+    state_add_facts(Empty, id(untouched), [literal(ok)], State0),
+    add_facts_flow(
+        reachable(State0), id(changed),
+        [literal(true), excluded_literal(true)], LocalFlow),
+    assertion(LocalFlow == unreachable),
+    state_add_facts(
+        State0, id(changed),
+        [literal(true), excluded_literal(true)], Contradictory),
+    consistent_flow(Contradictory, FullFlow),
+    assertion(FullFlow == LocalFlow).
+
+test(local_consistency_preserves_unrelated_valid_entries) :-
+    state_empty(Empty),
+    state_add_facts(Empty, id(first), [literal(true)], State0),
+    add_facts_flow(
+        reachable(State0), id(second), [literal(false)], Flow),
+    assertion(Flow = reachable(_)).
 
 :- end_tests(ir_analyzer).

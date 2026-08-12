@@ -323,7 +323,12 @@ call_goals([G|Gs]) :- call(G),
 
 %%% Prolog interop: %%%
 argv(K, Arg) :- current_prolog_flag(argv, Argv), nth0(K, Argv, A), ( atom_number(A, N) -> Arg = N ; Arg = A ).
-import_prolog_function(N, true) :- register_fun(N).
+import_prolog_function(N, true) :-
+    ( fun(N) -> WasCallable = true ; WasCallable = false ),
+    register_fun(N),
+    ( WasCallable == false
+      -> notify_mutation(callable_changed(N))
+    ; true ).
 'Predicate'([F|Args], Term) :- Term =.. [F|Args].
 callPredicate(G, true) :- call(G).
 assertzPredicate(G, true) :- assertz(G).

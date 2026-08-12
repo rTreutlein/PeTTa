@@ -78,14 +78,30 @@ facts and diagnostics, but it must not contain another recursive source walk.
 ## Implemented migration slice
 
 The current bridge batches and lowers each parsed clause occurrence once, runs
-fixed-point IR analysis over the prepared clauses, exports `proper_bool` result facts, and
-projects concrete types added specifically by a successful `if`,
+fixed-point IR analysis over the prepared clauses, retains the final
+per-occurrence analysis produced by that fixed point, exports `proper_bool`
+result facts, and projects concrete types added specifically by a successful `if`,
 `and-then`, or `or-else` condition into that branch's existing translator
-context. Equivalent copies made by dependency recompilation reuse an aligned
-prepared record while its file scope exists. If recompilation happens after
-that ephemeral scope has ended, the bridge freshly lowers the current stored
-direct-call closure, solves its summaries (including recursive groups), and
-reanalyzes the target clause without seeding it from stale summaries.
+context. Recursive components use a per-function worklist and revisit callers
+only when the resolver-visible callee contract changes. Equivalent copies made
+by dependency recompilation reuse an aligned prepared record while its file
+scope exists.
+
+Closed, ground function summaries are cached between source batches in the
+same SWI process. Cache rows contain no source variables, clause records, or
+IR; they carry a separate ground dependency set for clause sets, declarations,
+effects, constructors, aliases, callable classification, and callee summaries.
+Semantic mutation invalidates matching rows and their transitive summary
+dependents. Recompilation always rebuilds its roots but stops traversal at a
+valid cached callee. A solved batch is published atomically only after source
+translation succeeds. Nested imports invalidate the enclosing batch
+generation, and a failed runtime add restores the exact pre-transaction source
+occurrences and closed cache slice.
+
+If recompilation has no usable cache row after an ephemeral file scope has
+ended, the bridge freshly lowers the current stored direct-call closure, solves
+its summaries (including recursive groups), and uses the retained analysis for
+the target clause without seeding it from stale summaries.
 Compiler-generated lambda clauses receive their own nested ephemeral analysis
 record, so facts from a deferred body cannot escape into the enclosing clause
 and facts from one lambda branch cannot certify another. Unsupported lowering
@@ -96,16 +112,15 @@ The legacy determinism walker, whole-clause exhaustiveness checks, contextual
 `case`/`let` pattern checker, and runtime-boundary guards remain authoritative
 where the IR analyzer has not reached parity.  Current summary cardinality is
 a call contract for recursive analysis, not yet an independent proof of the
-declaration.  Dependencies and consumed boundary requirements are not yet in
-the summary record.  Until they are, production uses ephemeral batch summaries
-and clears the dormant persistent cache on every semantic mutation and new
-source batch. Result facts inferred only by the new analyzer are therefore
-guaranteed within an unmutated batch scope. A runtime declaration or clause
-mutation invalidates that scope immediately. Later dependency recompilation
-retains local flow refinements by conservatively reanalyzing the stored clause,
-while cross-file call-result facts fall back to legacy certificates. Runtime
-dependency recompilation rebuilds the reachable stored call closure instead
-of using that fallback in isolation.
+declaration. Consumed boundary requirements are not yet exported as a complete
+function contract.
+
+The cache is process-local: a fresh `run.sh` process still parses, lowers, and
+solves first-seen source. Invalidation also happens before recomputation, so a
+changed leaf currently evicts transitive callers even when its newly derived
+public summary is identical. Stopping propagation on an unchanged export, and
+persisting canonical source/summary fingerprints across process restarts, are
+separate incremental-compilation milestones.
 
 ## Migration invariants
 

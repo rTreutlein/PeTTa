@@ -23,6 +23,7 @@ result-shape decisions come from `ir_analyzer` records.
 :- use_module(abstract_domain).
 :- use_module(ir_analyzer).
 :- use_module(relational_ir).
+:- use_module(unified_checker_cache).
 :- use_module(library(lists)).
 :- use_module(library(ordsets)).
 :- use_module(library(ugraphs)).
@@ -34,37 +35,59 @@ result-shape decisions come from `ir_analyzer` records.
 :- meta_predicate with_unified_edge_facts(+, +, 0).
 :- meta_predicate with_unified_preanalyzed_form(0).
 
-:- dynamic unified_function_summary/6.
-% unified_function_summary(F, N, Card, ResultFacts, Effects, Diagnostics)
-
-
 with_unified_file_analysis(ParsedForms, Goal) :-
+    invalidate_enclosing_file_scope(ParsedForms),
     pending_clause_sources(ParsedForms, Pending),
     ( Pending == []
       -> call(Goal)
-    ; solve_file_analysis(Pending, Summaries, ClauseRecords),
+    ; solve_file_analysis(
+          Pending, Summaries, ClauseRecords, CacheEntries),
       current_bridge_generation(Generation),
       setup_call_cleanup(
-          push_bridge_scope(scope(Generation, Summaries, ClauseRecords), Saved),
-          call(Goal),
-          pop_bridge_scope(Saved)) ).
+          begin_nested_mutation_log(SavedMutations),
+          ( setup_call_cleanup(
+                push_bridge_scope(
+                    scope(Generation, Summaries, ClauseRecords), Saved),
+                call(Goal),
+                pop_bridge_scope(Saved)),
+            nested_mutation_events(Events) ),
+          restore_nested_mutation_log(SavedMutations)),
+      publish_or_refresh_cache_entries(
+          Generation, Pending, CacheEntries, Events) ).
+
+% A nested file is solved while its caller's batch summaries are still in
+% scope.  Its prevalidated clause events intentionally do not invalidate that
+% same nested scope, but they can change how the enclosing file's calls are
+% classified.  Invalidate the outer generation once at the nested batch
+% boundary so its completion recomputes, rather than publishing, the analysis
+% made before the import ran.
+invalidate_enclosing_file_scope([]) :- !.
+invalidate_enclosing_file_scope(_) :-
+    raw_bridge_scope(_), !,
+    bump_bridge_generation.
+invalidate_enclosing_file_scope(_).
 
 % Dependency invalidation may rebuild several functions, each with several
-% clauses.  All of them observe one post-mutation program state, so analyze the
-% union of their direct-call closures once and keep that result in an ephemeral
-% scope for the complete staged rebuild.  This is deliberately not a persistent
-% cache: the next semantic event still starts from the current stored clauses.
+% clauses.  Analyze that changed set together, expanding its direct-call
+% closure only where no valid closed summary remains.  Unchanged callees are
+% resolved from the persistent cache.  Clause records stay invocation-local;
+% closed summaries are published only after the rebuild goal succeeds.
+with_unified_recompile_analysis([], Goal) :- !,
+    call(Goal).
 with_unified_recompile_analysis(Functions, Goal) :-
     recompile_clause_sources(Functions, Universe, Sources),
     ( Sources == []
       -> call(Goal)
-    ; solve_source_closure(Sources, Universe, Summaries, ClauseResults),
+    ; solve_source_closure(
+          Sources, Universe, Summaries, ClauseResults, Relevant),
       clause_records_from_results(Sources, ClauseResults, Records),
+      summary_cache_entries(Summaries, Relevant, CacheEntries),
       current_bridge_generation(Generation),
       setup_call_cleanup(
           push_bridge_scope(scope(Generation, Summaries, Records), Saved),
           call(Goal),
-          pop_bridge_scope(Saved)) ).
+          pop_bridge_scope(Saved)),
+      publish_cache_entries_if_current(Generation, CacheEntries) ).
 
 recompile_clause_sources(Functions, Universe, Sources) :-
     current_stored_clause_sources(Universe),
@@ -220,12 +243,16 @@ unified_function_result_fact(F, N, Fact) :-
     member(Stored, Facts),
     Stored =@= Fact, !.
 
-% Summaries do not yet carry dependency edges.  Clearing the complete cache is
-% the conservative contract until decl/effect/clause/constructor dependencies
-% are part of the summary record and graph invalidation can be selective.
+% Compatibility view retained for legacy certificate consumers.  The cache
+% owns its rows and never exposes clause records or attributed variables.
+unified_function_summary(F, N, Card, Facts, Effects, Diagnostics) :-
+    unified_summary_cache_lookup(
+        F, N,
+        function_summary(F, N, Card, Facts, Effects, Diagnostics)).
+
 unified_checker_invalidate_event(Event) :-
     maybe_invalidate_active_scope(Event),
-    retractall(unified_function_summary(_, _, _, _, _, _)).
+    unified_summary_cache_invalidate_event(Event).
 
 maybe_invalidate_active_scope(clause_changed(_, prevalidated)) :- !.
 maybe_invalidate_active_scope(clause_changed(_, derived)) :- !.
@@ -240,7 +267,15 @@ maybe_invalidate_active_scope(generated_specialization_removed(_)) :- !.
 % from a runnable does not enter this scope and invalidates the generation.
 maybe_invalidate_active_scope(_) :-
     catch(b_getval('$unified_source_form', true), _, fail), !.
-maybe_invalidate_active_scope(_) :- bump_bridge_generation.
+maybe_invalidate_active_scope(Event) :-
+    bump_bridge_generation,
+    record_nested_scope_mutation(Event).
+
+record_nested_scope_mutation(Event) :-
+    raw_bridge_scope(_), !,
+    catch(b_getval('$unified_nested_mutations', Events0), _, Events0 = []),
+    b_setval('$unified_nested_mutations', [Event|Events0]).
+record_nested_scope_mutation(_).
 
 
 
@@ -260,31 +295,30 @@ pending_clause_sources_([_|Forms], Pending) :-
     pending_clause_sources_(Forms, Pending).
 
 solve_file_analysis(Pending, Summaries, ClauseRecords) :-
-    unified_checker_invalidate_event(new_file_batch),
+    solve_file_analysis(Pending, Summaries, ClauseRecords, _).
+
+solve_file_analysis(Pending, Summaries, ClauseRecords, CacheEntries) :-
     touched_keys(Pending, Keys),
+    maplist(invalidate_pending_summary, Keys),
     clause_universe(Keys, Pending, ClauseSources),
     prepare_clause_universe(ClauseSources, Clauses),
     initial_touched_summaries(Keys, Initial),
     solve_fixed_point(Clauses, Keys, Initial, 0, Solved, ClauseResults),
     include(summary_for_keys(Keys), Solved, Summaries),
-    clause_records_from_results(Pending, ClauseResults, ClauseRecords).
+    clause_records_from_results(Pending, ClauseResults, ClauseRecords),
+    summary_cache_entries(Summaries, Clauses, CacheEntries).
+
+invalidate_pending_summary(Key) :-
+    unified_checker_invalidate_event(clause_changed(Key, prevalidated)).
 
 touched_keys(Pending, Keys) :-
     findall(F/N, member(clause_source(F, N, _), Pending), Keys0),
     sort(Keys0, Keys).
 
 clause_universe(Keys, Pending, Clauses) :-
-    findall(clause_source(F, N, Source),
-            ( member(F/N, Keys),
-              existing_clause_source(F, N, Source) ),
-            Existing),
+    current_stored_clause_sources(Stored),
+    include(source_record_for_keys(Keys), Stored, Existing),
     append(Existing, Pending, Clauses).
-
-existing_clause_source(F, N, Source) :-
-    catch(user:translated_from(Ref, Source), _, fail),
-    clause_property(Ref, predicate(_)),
-    Source = [Eq, [F|Args], _], Eq == (=),
-    is_list(Args), length(Args, N).
 
 % Recompilation runs outside the file solver which originally supplied call
 % summaries.  Reusing that solver's records after a mutation is unsound, while
@@ -309,12 +343,58 @@ solve_current_source_closure(RootSources, Summaries, ClauseResults) :-
     solve_source_closure(RootSources, Sources, Summaries, ClauseResults).
 
 solve_source_closure(RootSources, Sources, Summaries, ClauseResults) :-
-    source_keys(RootSources, Roots),
-    prepare_clause_universe(Sources, Prepared),
-    reachable_prepared_keys(Roots, Prepared, Keys),
-    include(prepared_for_keys(Keys), Prepared, Relevant),
+    solve_source_closure(
+        RootSources, Sources, Summaries, ClauseResults, _).
+
+solve_source_closure(RootSources, Sources, Summaries, ClauseResults,
+                     Relevant) :-
+    prepare_cached_source_closure(
+        RootSources, Sources, Relevant, Keys),
     initial_touched_summaries(Keys, Initial),
     solve_fixed_point(Relevant, Keys, Initial, 0, Summaries, ClauseResults).
+
+prepare_cached_source_closure(RootSources, Universe, Prepared, Keys) :-
+    source_keys(RootSources, RootKeys),
+    sources_for_keys(RootKeys, Universe, InitialSources),
+    prepare_clause_universe(InitialSources, InitialPrepared),
+    expand_uncached_source_closure(
+        InitialPrepared, RootKeys, Universe, Prepared, Keys).
+
+expand_uncached_source_closure(Prepared0, Keys0, Universe, Prepared, Keys) :-
+    findall(Callee,
+            ( member(Clause, Prepared0),
+              prepared_clause_call_key(Clause, Callee),
+              \+ memberchk(Callee, Keys0),
+              \+ cached_summary_key(Callee),
+              source_key_in_universe(Universe, Callee) ),
+            Missing0),
+    sort(Missing0, Missing),
+    ( Missing == []
+      -> Prepared = Prepared0, Keys = Keys0
+    ; sources_for_keys(Missing, Universe, MoreSources),
+      prepare_clause_universe(MoreSources, MorePrepared),
+      append(Prepared0, MorePrepared, Prepared1),
+      append(Keys0, Missing, Keys1a),
+      sort(Keys1a, Keys1),
+      expand_uncached_source_closure(
+          Prepared1, Keys1, Universe, Prepared, Keys) ).
+
+cached_summary_key(F/N) :-
+    unified_function_summary(F, N, _, _, _, _).
+
+source_key_in_universe(Universe, Key) :-
+    member(Source, Universe),
+    Source = clause_source(_, _, _),
+    source_clause_record_key(Source, Key), !.
+
+sources_for_keys(Keys, Universe, Sources) :-
+    include(source_record_for_keys(Keys), Universe, Sources).
+
+source_record_for_keys(Keys, Source) :-
+    source_clause_record_key(Source, Key),
+    memberchk(Key, Keys).
+
+source_clause_record_key(clause_source(F, N, _), F/N).
 
 source_keys(Sources, Keys) :-
     findall(F/N, member(clause_source(F, N, _), Sources), Keys0),
@@ -713,6 +793,134 @@ summary_for_keys(Keys, function_summary(F, N, _, _, _, _)) :-
 
 summaries_equivalent(A, B) :- A =@= B.
 
+
+% -- Closed summary cache boundary --------------------------------------
+
+summary_cache_entries([], _, []).
+summary_cache_entries([Summary|Summaries], Clauses, Entries) :-
+    ( cacheable_summary_entry(Summary, Clauses, Entry)
+      -> Entries = [Entry|Rest]
+    ; Entries = Rest ),
+    summary_cache_entries(Summaries, Clauses, Rest).
+
+cacheable_summary_entry(
+        Summary, Clauses, cache_entry(Summary, Dependencies)) :-
+    Summary = function_summary(F, N, _, _, _, _),
+    \+ generated_summary_symbol(F),
+    current_predicate(user:analysis_function_decl_dependencies/2),
+    current_predicate(user:analysis_type_dependency/2),
+    function_summary_dependencies(F/N, Clauses, Dependencies),
+    ground(Summary-Dependencies).
+
+generated_summary_symbol(F) :-
+    catch(user:ho_specialization(_, F), _, fail), !.
+
+function_summary_dependencies(F/N, Clauses, Dependencies) :-
+    findall(CallKey,
+            ( member(Clause, Clauses),
+              prepared_clause_key(Clause, F/N),
+              prepared_clause_call_key(Clause, CallKey) ),
+            CallKeys0),
+    sort(CallKeys0, CallKeys),
+    findall(Dependency,
+            ( member(CallKey, CallKeys),
+              summary_call_dependency(CallKey, Dependency) ),
+            CallDependencies),
+    findall(ConstructorKey,
+            ( member(Clause, Clauses),
+              prepared_clause_key(Clause, F/N),
+              prepared_clause_constructor_key(Clause, ConstructorKey) ),
+            ConstructorKeys0),
+    sort(ConstructorKeys0, ConstructorKeys),
+    findall(Dependency,
+            ( member(ConstructorKey, ConstructorKeys),
+              summary_constructor_dependency(ConstructorKey, Dependency) ),
+            ConstructorDependencies),
+    findall(TypeRef,
+            ( member(Clause, Clauses),
+              prepared_clause_key(Clause, F/N),
+              prepared_clause_type_ref(Clause, TypeRef) ),
+            TypeRefs0),
+    sort(TypeRefs0, TypeRefs),
+    findall(Dependency,
+            ( member(TypeRef, TypeRefs),
+              user:analysis_type_dependency(TypeRef, Dependency) ),
+            TypeDependencies),
+    findall(Name,
+            ( member(Key, [F/N|CallKeys]), Key = Name/_
+            ; member(Key, ConstructorKeys), Key = Name/_ ),
+            DeclarationNames0),
+    sort(DeclarationNames0, DeclarationNames),
+    findall(Dependency,
+            ( member(Name, DeclarationNames),
+              user:analysis_function_decl_dependencies(Name, NameDependencies),
+              member(Dependency, NameDependencies) ),
+            DeclarationDependencies),
+    append([CallDependencies, ConstructorDependencies,
+            TypeDependencies, DeclarationDependencies], All0),
+    sort(All0, Dependencies).
+
+summary_call_dependency(F/N, summary(F/N)).
+summary_call_dependency(F/N, clause_set(F/N)).
+summary_call_dependency(F/N, decl(F/N)).
+summary_call_dependency(F/N, effect(F/N)).
+summary_call_dependency(F/_, declaration(origin, F)).
+
+prepared_clause_constructor_key(
+        prepared_clause(_, _, _, lowered(IR, _, _)), Tag/Arity) :-
+    ir_node(IR, construct(_, pattern(Tag), Children)),
+    atom(Tag), is_list(Children), length(Children, Arity).
+
+prepared_clause_type_ref(
+        prepared_clause(_, _, _, lowered(IR, _, _)), TypeRef) :-
+    ir_node(IR, construct(_, typed_pattern(TypeRef), _)),
+    nonvar(TypeRef),
+    TypeRef \= declared_arg(_, _, _).
+
+summary_constructor_dependency(F/N, decl(F/N)).
+summary_constructor_dependency(F/_, declaration(origin, F)).
+
+publish_cache_entries_if_current(Generation, Entries) :-
+    current_bridge_generation(Current),
+    ( Current =:= Generation
+      -> unified_summary_cache_store_many(Entries)
+    ; true ).
+
+publish_or_refresh_cache_entries(Generation, Pending, Entries, Events) :-
+    current_bridge_generation(Current),
+    ( Current =:= Generation
+      -> unified_summary_cache_store_many(Entries)
+    ; refresh_pending_cache_entries(Pending, Events) ).
+
+begin_nested_mutation_log(saved_mutations(Had, Previous)) :-
+    ( catch(b_getval('$unified_nested_mutations', Stored), _, fail)
+      -> Had = yes, Previous = Stored
+    ; Had = no, Previous = [] ),
+    b_setval('$unified_nested_mutations', []).
+
+restore_nested_mutation_log(saved_mutations(yes, Previous)) :- !,
+    b_setval('$unified_nested_mutations', Previous).
+restore_nested_mutation_log(_) :-
+    b_setval('$unified_nested_mutations', []).
+
+nested_mutation_events(Events) :-
+    ( catch(b_getval('$unified_nested_mutations', Stored), _, fail)
+      -> sort(Stored, Events)
+    ; Events = [] ).
+
+refresh_pending_cache_entries(Pending, Events) :-
+    maplist(unified_checker_invalidate_event, Events),
+    touched_keys(Pending, Keys),
+    maplist(invalidate_pending_summary, Keys),
+    current_stored_clause_sources(Stored),
+    sources_for_keys(Keys, Stored, CurrentRoots),
+    ( CurrentRoots == []
+      -> true
+    ; solve_source_closure(
+          CurrentRoots, Stored, Summaries, _, Relevant),
+      summary_cache_entries(Summaries, Relevant, FreshEntries),
+      unified_summary_cache_store_many(FreshEntries) ).
+
 % -- Legacy resolvers ----------------------------------------------------
 
 bridge_resolve_type(declared_arg(F, Arity, Index), Type) :-
@@ -1016,6 +1224,27 @@ test(recompile_summary_universe_is_transitive_and_scc_complete) :-
     assertion(memberchk(recompile_producer/0, Keys)),
     assertion(\+ memberchk(recompile_unrelated/0, Keys)).
 
+test(recompile_closure_stops_at_cached_callee,
+     [setup((unified_summary_cache_reset,
+             unified_summary_cache_store(
+                 function_summary(cache_stop_leaf, 0, card(1,1),
+                                  [proper_bool], [], []), []))),
+      cleanup(unified_summary_cache_reset)]) :-
+    Root = clause_source(cache_stop_root, 0,
+                         [=, [cache_stop_root], [cache_stop_mid]]),
+    Sources = [
+        Root,
+        clause_source(cache_stop_mid, 0,
+                      [=, [cache_stop_mid], [cache_stop_leaf]]),
+        clause_source(cache_stop_leaf, 0,
+                      [=, [cache_stop_leaf], true]),
+        clause_source(cache_stop_unrelated, 0,
+                      [=, [cache_stop_unrelated], false])
+    ],
+    prepare_cached_source_closure([Root], Sources, Prepared, Keys),
+    assertion(Keys == [cache_stop_mid/0, cache_stop_root/0]),
+    assertion(length(Prepared, 2)).
+
 test(acyclic_solver_analyzes_each_clause_once_and_retains_results) :-
     Sources = [
         clause_source(solver_chain_0, 0,
@@ -1225,25 +1454,27 @@ test(constructor_resolver_refuses_genuine_same_arity_ambiguity,
            bridge_ambiguous_ctor, 1, _, _).
 
 test(semantic_mutation_clears_transitive_summary_cache,
-     [setup((assertz(unified_checker_bridge:unified_function_summary(
-                         test_callee, 0, card(1,1), [proper_bool], [], [])),
-             assertz(unified_checker_bridge:unified_function_summary(
-                         test_caller, 0, card(1,1), [proper_bool], [], [])))),
-      cleanup((retractall(unified_checker_bridge:unified_function_summary(
-                              test_callee, _, _, _, _, _)),
-               retractall(unified_checker_bridge:unified_function_summary(
-                              test_caller, _, _, _, _, _))))]) :-
+     [setup((unified_summary_cache_reset,
+             unified_summary_cache_store(
+                 function_summary(test_callee, 0, card(1,1),
+                                  [proper_bool], [], []), []),
+             unified_summary_cache_store(
+                 function_summary(test_caller, 0, card(1,1),
+                                  [proper_bool], [], []),
+                 [summary(test_callee/0)]))),
+      cleanup(unified_summary_cache_reset)]) :-
     unified_checker_invalidate_event(clause_changed(test_callee/0, runtime)),
     \+ unified_checker_bridge:unified_function_summary(
-           test_callee, _, _, _, _, _),
+           test_callee, 0, _, _, _, _),
     \+ unified_checker_bridge:unified_function_summary(
-           test_caller, _, _, _, _, _).
+           test_caller, 0, _, _, _, _).
 
 test(scoped_summary_shadows_persistent_facts,
-     [setup(assertz(unified_checker_bridge:unified_function_summary(
-                        shadowed, 0, card(1,1), [proper_bool], [], []))),
-      cleanup(retractall(unified_checker_bridge:unified_function_summary(
-                             shadowed, _, _, _, _, _)))]) :-
+     [setup((unified_summary_cache_reset,
+             unified_summary_cache_store(
+                 function_summary(shadowed, 0, card(1,1),
+                                  [proper_bool], [], []), []))),
+      cleanup(unified_summary_cache_reset)]) :-
     current_bridge_generation(Generation),
     Record = clause_record(scope_test, scope_ir, [], [], scope_analysis),
     setup_call_cleanup(
