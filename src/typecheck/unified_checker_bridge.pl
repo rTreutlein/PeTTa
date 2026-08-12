@@ -58,8 +58,8 @@ with_unified_recompile_analysis(Functions, Goal) :-
     recompile_clause_sources(Functions, Universe, Sources),
     ( Sources == []
       -> call(Goal)
-    ; solve_source_closure(Sources, Universe, Summaries, Prepared),
-      analyze_pending(Sources, Prepared, Summaries, Records),
+    ; solve_source_closure(Sources, Universe, Summaries, ClauseResults),
+      clause_records_from_results(Sources, ClauseResults, Records),
       current_bridge_generation(Generation),
       setup_call_cleanup(
           push_bridge_scope(scope(Generation, Summaries, Records), Saved),
@@ -82,8 +82,9 @@ with_unified_clause_analysis(Source, Goal) :-
       -> with_current_clause(Record, Goal)
     ; raw_bridge_scope(scope(_, _, StaleRecords)),
       record_for_source(StaleRecords, Source, StaleRecord),
-      current_stored_summaries(Source, Summaries),
-      refresh_clause_record(StaleRecord, Summaries, FreshRecord)
+      current_stored_summaries(Source, Summaries, ClauseResults),
+      solver_record_or_refresh(
+          Source, ClauseResults, StaleRecord, Summaries, FreshRecord)
       -> current_bridge_generation(Generation),
          % A nested import or runnable mutation invalidates batch summaries,
          % but the occurrence's already-lowered IR is still valid. Recompute
@@ -96,8 +97,9 @@ with_unified_clause_analysis(Source, Goal) :-
              pop_bridge_scope(ScopeSaved))
     ; raw_bridge_scope(scope(_, _, StaleRecords)),
       aligned_record_for_source(StaleRecords, Source, StaleRecord),
-      current_stored_summaries(Source, Summaries),
-      refresh_clause_record(StaleRecord, Summaries, FreshRecord)
+      current_stored_summaries(Source, Summaries, ClauseResults),
+      solver_record_or_refresh(
+          Source, ClauseResults, StaleRecord, Summaries, FreshRecord)
       -> current_bridge_generation(Generation),
          setup_call_cleanup(
              push_bridge_scope(
@@ -105,8 +107,9 @@ with_unified_clause_analysis(Source, Goal) :-
              with_current_clause(FreshRecord, Goal),
              pop_bridge_scope(ScopeSaved))
     ; stored_clause_source(Source),
-      current_stored_summaries(Source, Summaries),
-      fresh_clause_record(Source, Summaries, FreshRecord)
+      current_stored_summaries(Source, Summaries, ClauseResults),
+      solver_record_or_fresh(
+          Source, ClauseResults, Summaries, FreshRecord)
       -> current_bridge_generation(Generation),
          % Dependency recompilation may happen after the source file's batch
          % scope has ended. Rebuild the current stored call closure instead of
@@ -152,6 +155,17 @@ aligned_record_for_source(Records, Source, Record) :-
 refresh_clause_record(clause_record(Source, IR, Env, Origins, _), Summaries,
                       clause_record(Source, IR, Env, Origins, Analysis)) :-
     analyze_lowered_clause(IR, Summaries, Analysis).
+
+solver_record_or_refresh(Source, ClauseResults, StaleRecord, Summaries,
+                         FreshRecord) :-
+    ( clause_record_from_results(Source, ClauseResults, SolverRecord)
+      -> FreshRecord = SolverRecord
+    ; refresh_clause_record(StaleRecord, Summaries, FreshRecord) ).
+
+solver_record_or_fresh(Source, ClauseResults, Summaries, FreshRecord) :-
+    ( clause_record_from_results(Source, ClauseResults, SolverRecord)
+      -> FreshRecord = SolverRecord
+    ; fresh_clause_record(Source, Summaries, FreshRecord) ).
 
 stored_clause_source(Source) :-
     catch(user:translated_from(Ref, Stored), _, fail),
@@ -251,9 +265,9 @@ solve_file_analysis(Pending, Summaries, ClauseRecords) :-
     clause_universe(Keys, Pending, ClauseSources),
     prepare_clause_universe(ClauseSources, Clauses),
     initial_touched_summaries(Keys, Initial),
-    solve_fixed_point(Clauses, Keys, Initial, 0, Solved),
+    solve_fixed_point(Clauses, Keys, Initial, 0, Solved, ClauseResults),
     include(summary_for_keys(Keys), Solved, Summaries),
-    analyze_pending(Pending, Clauses, Solved, ClauseRecords).
+    clause_records_from_results(Pending, ClauseResults, ClauseRecords).
 
 touched_keys(Pending, Keys) :-
     findall(F/N, member(clause_source(F, N, _), Pending), Keys0),
@@ -282,22 +296,25 @@ existing_clause_source(F, N, Source) :-
 % mutation in the same source batch.  Nothing from this computation is asserted
 % into unified_function_summary/6.
 current_stored_summaries(Source, Summaries) :-
+    current_stored_summaries(Source, Summaries, _).
+
+current_stored_summaries(Source, Summaries, ClauseResults) :-
     source_clause_key(Source, F/N),
     solve_current_source_closure(
-        [clause_source(F, N, Source)], Summaries, _).
+        [clause_source(F, N, Source)], Summaries, ClauseResults).
 
-solve_current_source_closure(RootSources, Summaries, Relevant) :-
+solve_current_source_closure(RootSources, Summaries, ClauseResults) :-
     current_stored_clause_sources(Stored),
     ensure_sources_in_universe(RootSources, Stored, Sources),
-    solve_source_closure(RootSources, Sources, Summaries, Relevant).
+    solve_source_closure(RootSources, Sources, Summaries, ClauseResults).
 
-solve_source_closure(RootSources, Sources, Summaries, Relevant) :-
+solve_source_closure(RootSources, Sources, Summaries, ClauseResults) :-
     source_keys(RootSources, Roots),
     prepare_clause_universe(Sources, Prepared),
     reachable_prepared_keys(Roots, Prepared, Keys),
     include(prepared_for_keys(Keys), Prepared, Relevant),
     initial_touched_summaries(Keys, Initial),
-    solve_fixed_point(Relevant, Keys, Initial, 0, Summaries).
+    solve_fixed_point(Relevant, Keys, Initial, 0, Summaries, ClauseResults).
 
 source_keys(Sources, Keys) :-
     findall(F/N, member(clause_source(F, N, _), Sources), Keys0),
@@ -379,18 +396,27 @@ initial_touched_summaries([F/N|Keys],
                                             [initial])|Rest]) :-
     initial_touched_summaries(Keys, Rest).
 
-% Solve result summaries in dependency order.  The former implementation
-% analyzed the complete closure on every round, so a call chain of depth D ran
-% every one of its N clauses roughly D times.  Direct-call SCCs are the only
-% places that need iteration: acyclic components are analyzed once, callee
-% first, while a recursive component iterates only its own clauses.
+% Solve result summaries in dependency order and retain the clause analyses
+% which established the final summaries.  Direct-call SCCs are the only places
+% that need iteration: acyclic components are analyzed once, callee first.  A
+% recursive component uses a key worklist, so a changed summary reanalyzes only
+% its callers rather than every clause in the SCC.
 solve_fixed_point(Clauses, Keys, Current, _, Solved) :-
-    solve_fixed_point_counted(Clauses, Keys, Current, Solved, _).
+    solve_fixed_point(Clauses, Keys, Current, 0, Solved, _).
+
+solve_fixed_point(Clauses, Keys, Current, _, Solved, ClauseResults) :-
+    solve_fixed_point_counted(
+        Clauses, Keys, Current, Solved, ClauseResults, _).
 
 solve_fixed_point_counted(Clauses, Keys, Current, Solved, AnalysisCount) :-
+    solve_fixed_point_counted(
+        Clauses, Keys, Current, Solved, _, AnalysisCount).
+
+solve_fixed_point_counted(Clauses, Keys, Current, Solved, ClauseResults,
+                          AnalysisCount) :-
     solver_component_order(Keys, Clauses, Components, Graph),
     solve_components(Components, Graph, Clauses, Current, Solved,
-                     0, AnalysisCount).
+                     ClauseResults, 0, AnalysisCount).
 
 solver_component_order(Keys, Clauses, Components, Graph) :-
     solver_call_graph(Keys, Clauses, Graph),
@@ -443,44 +469,99 @@ unwrap_scc(scc(SCC), SCC).
 scc_for_key([SCC|_], Key, SCC) :- memberchk(Key, SCC), !.
 scc_for_key([_|SCCs], Key, SCC) :- scc_for_key(SCCs, Key, SCC).
 
-solve_components([], _, _, Summaries, Summaries, Count, Count).
+solve_components([], _, _, Summaries, Summaries, [], Count, Count).
 solve_components([SCC|SCCs], Graph, Clauses, Current, Solved,
-                 Count0, Count) :-
+                 ClauseResults, Count0, Count) :-
     include(prepared_for_keys(SCC), Clauses, ComponentClauses),
     ( recursive_component(SCC, Graph)
-      -> solve_recursive_component(ComponentClauses, SCC, Current, Next,
-                                   32, Count0, Count1)
+      -> solve_recursive_component(ComponentClauses, SCC, Graph,
+                                   Current, Next, ComponentResults,
+                                   Count0, Count1)
     ; solve_component_once(ComponentClauses, SCC, Current, Next,
-                           Count0, Count1) ),
-    solve_components(SCCs, Graph, Clauses, Next, Solved, Count1, Count).
+                           ComponentResults, Count0, Count1) ),
+    solve_components(SCCs, Graph, Clauses, Next, Solved, RestResults,
+                     Count1, Count),
+    append(ComponentResults, RestResults, ClauseResults).
 
 recursive_component([_,_|_], _) :- !.
 recursive_component([Key], Graph) :-
     neighbors(Key, Graph, Neighbors),
     memberchk(Key, Neighbors).
 
-solve_component_once(Clauses, Keys, Current, Next, Count0, Count) :-
+solve_component_once(Clauses, Keys, Current, Next, ClauseResults,
+                     Count0, Count) :-
     analyze_clause_universe(Clauses, Current, Analyses),
     summarize_keys(Keys, Analyses, Derived),
     replace_key_summaries(Keys, Current, Derived, Next),
+    ClauseResults = Analyses,
     length(Clauses, ClauseCount),
     Count is Count0 + ClauseCount.
 
-solve_recursive_component(Clauses, Keys, Current, Solved,
-                          Remaining, Count0, Count) :-
-    solve_component_once(Clauses, Keys, Current, Next, Count0, Count1),
-    ( summaries_for_keys_equivalent(Keys, Current, Next)
-      -> Solved = Next, Count = Count1
-    ; Remaining =< 1
-      -> Solved = Next, Count = Count1
-    ; More is Remaining - 1,
-      solve_recursive_component(Clauses, Keys, Next, Solved,
-                                More, Count1, Count) ).
+solve_recursive_component(Clauses, Keys, Graph, Current, Solved,
+                          ClauseResults, Count0, Count) :-
+    length(Keys, KeyCount),
+    MaxSteps is 32 * max(1, KeyCount),
+    solve_recursive_worklist(Keys, Keys, Graph, Clauses,
+                             Current, Solved, [], ClauseResults,
+                             MaxSteps, Count0, Count).
 
-summaries_for_keys_equivalent(Keys, Left, Right) :-
-    include(summary_for_keys(Keys), Left, LeftSelected),
-    include(summary_for_keys(Keys), Right, RightSelected),
-    LeftSelected =@= RightSelected.
+solve_recursive_worklist([], _, _, _, Summaries, Summaries,
+                         ClauseResults, ClauseResults, _, Count, Count).
+solve_recursive_worklist([Key|Queue0], Keys, Graph, Clauses,
+                         Current, Solved, Results0, ClauseResults,
+                         Remaining, Count0, Count) :-
+    ( Remaining =< 0
+      -> throw(error(unified_summary_nonconvergence(Keys), typecheck))
+    ; true ),
+    include(prepared_for_keys([Key]), Clauses, KeyClauses),
+    solve_component_once(KeyClauses, [Key], Current, Next,
+                         KeyResults, Count0, Count1),
+    replace_key_clause_results(Key, Results0, KeyResults, Results1),
+    ( summary_resolver_view_unchanged(Key, Current, Next)
+      -> Queue = Queue0
+    ; component_callers(Key, Keys, Graph, Callers),
+      ord_union(Queue0, Callers, Queue) ),
+    More is Remaining - 1,
+    solve_recursive_worklist(Queue, Keys, Graph, Clauses,
+                             Next, Solved, Results1, ClauseResults,
+                             More, Count1, Count).
+
+replace_key_clause_results(Key, Current, Derived, Next) :-
+    exclude(clause_result_for_key(Key), Current, External),
+    append(External, Derived, Next).
+
+clause_result_for_key(F/N, clause_result(F, N, _, _)).
+
+component_callers(Callee, Keys, Graph, Callers) :-
+    findall(Caller,
+            ( member(Caller-Neighbors, Graph),
+              memberchk(Caller, Keys),
+              memberchk(Callee, Neighbors) ),
+            Callers0),
+    sort(Callers0, Callers).
+
+% Only these fields are observable by bridge_resolve_call/5.  Diagnostics are
+% retained in the full summary for reporting, but a seed-only diagnostic such
+% as `initial` cannot change a caller analysis and must not drive propagation.
+% Exported facts and effects are ground contracts; sorting gives their set
+% representation one stable comparison order.
+summary_resolver_view_unchanged(Key, Left, Right) :-
+    summary_for_key(Key, Left, LeftSummary),
+    summary_for_key(Key, Right, RightSummary),
+    summary_resolver_view(LeftSummary, LeftView),
+    summary_resolver_view(RightSummary, RightView),
+    LeftView == RightView.
+
+summary_for_key(F/N, Summaries, Summary) :-
+    member(Summary, Summaries),
+    Summary = function_summary(F, N, _, _, _, _), !.
+
+summary_resolver_view(
+        function_summary(_, _, Card, Facts, Effects, _),
+        resolver_summary(Card, NormalFacts, NormalEffects)) :-
+    ground(Card-Facts-Effects),
+    sort(Facts, NormalFacts),
+    sort(Effects, NormalEffects).
 
 analyze_clause_universe([], _, []).
 analyze_clause_universe([prepared_clause(F, N, Source, Lowered)|Clauses], Summaries,
@@ -488,16 +569,24 @@ analyze_clause_universe([prepared_clause(F, N, Source, Lowered)|Clauses], Summar
     analyze_prepared_clause(Lowered, Summaries, Outcome),
     analyze_clause_universe(Clauses, Summaries, Results).
 
-analyze_pending([], _, _, []).
-analyze_pending([clause_source(_, _, Source)|Pending], Clauses, Summaries,
-                Records) :-
-    ( prepared_for_source(Clauses, Source, Lowered)
-      -> analyze_prepared_clause(Lowered, Summaries, Outcome)
-    ; Outcome = unsupported(missing_prepared_clause) ),
-    ( Outcome = analyzed(IR, Env, Origins, Analysis)
-      -> Records = [clause_record(Source, IR, Env, Origins, Analysis)|Rest]
+clause_records_from_results([], _, []).
+clause_records_from_results([clause_source(_, _, Source)|Pending], Results,
+                            Records) :-
+    ( clause_record_from_results(Source, Results, Record)
+      -> Records = [Record|Rest]
     ; Records = Rest ),
-    analyze_pending(Pending, Clauses, Summaries, Rest).
+    clause_records_from_results(Pending, Results, Rest).
+
+clause_record_from_results(Source, Results,
+                           clause_record(Source, IR, Env, Origins, Analysis)) :-
+    clause_result_for_source(Results, Source,
+                             analyzed(IR, Env, Origins, Analysis)).
+
+clause_result_for_source([clause_result(_, _, Stored, Outcome)|_], Source,
+                         Outcome) :-
+    Stored == Source, !.
+clause_result_for_source([_|Results], Source, Outcome) :-
+    clause_result_for_source(Results, Source, Outcome).
 
 prepared_for_source([prepared_clause(_, _, Stored, Lowered)|_], Source,
                     Lowered) :-
@@ -926,6 +1015,109 @@ test(recompile_summary_universe_is_transitive_and_scc_complete) :-
     assertion(memberchk(recompile_consumer/0, Keys)),
     assertion(memberchk(recompile_producer/0, Keys)),
     assertion(\+ memberchk(recompile_unrelated/0, Keys)).
+
+test(acyclic_solver_analyzes_each_clause_once_and_retains_results) :-
+    Sources = [
+        clause_source(solver_chain_0, 0,
+                      [=, [solver_chain_0], true]),
+        clause_source(solver_chain_1, 0,
+                      [=, [solver_chain_1], [solver_chain_0]]),
+        clause_source(solver_chain_2, 0,
+                      [=, [solver_chain_2], [solver_chain_1]]),
+        clause_source(solver_chain_3, 0,
+                      [=, [solver_chain_3], [solver_chain_2]]),
+        clause_source(solver_chain_4, 0,
+                      [=, [solver_chain_4], [solver_chain_3]])
+    ],
+    prepare_clause_universe(Sources, Prepared),
+    source_keys(Sources, Keys),
+    initial_touched_summaries(Keys, Initial),
+    solve_fixed_point_counted(
+        Prepared, Keys, Initial, Summaries, Results, Count),
+    assertion(Count == 5),
+    assertion(length(Results, 5)),
+    summary_for_key(solver_chain_4/0, Summaries, LastSummary),
+    summary_resolver_view(
+        LastSummary,
+        resolver_summary(card(1,1), Facts, _)),
+    assertion(memberchk(proper_bool, Facts)).
+
+test(recursive_diagnostic_only_delta_does_not_reanalyze) :-
+    Sources = [
+        clause_source(solver_inert_self, 0,
+                      [=, [solver_inert_self], [solver_inert_self]])
+    ],
+    prepare_clause_universe(Sources, Prepared),
+    source_keys(Sources, Keys),
+    initial_touched_summaries(Keys, Initial),
+    solve_fixed_point_counted(
+        Prepared, Keys, Initial, Summaries, Results, Count),
+    assertion(Count == 1),
+    assertion(Results = [clause_result(solver_inert_self, 0, _, _)]),
+    summary_for_key(solver_inert_self/0, Summaries,
+                    function_summary(_, _, card(0,many), [], [opaque], [])),
+    Initial = [InitialSummary],
+    summary_for_key(solver_inert_self/0, Summaries, FinalSummary),
+    assertion(summary_resolver_view(InitialSummary, View)),
+    assertion(summary_resolver_view(FinalSummary, View)).
+
+test(recursive_worklist_retains_final_propagated_analysis) :-
+    Sources = [
+        clause_source(solver_mutual_a, 0,
+                      [=, [solver_mutual_a],
+                          [if, true, true, [solver_mutual_b]]]),
+        clause_source(solver_mutual_b, 0,
+                      [=, [solver_mutual_b], [solver_mutual_a]])
+    ],
+    prepare_clause_universe(Sources, Prepared),
+    source_keys(Sources, Keys),
+    initial_touched_summaries(Keys, Initial),
+    solve_fixed_point_counted(
+        Prepared, Keys, Initial, Summaries, Results, Count),
+    assertion(Count == 3),
+    summary_for_key(solver_mutual_b/0, Summaries, BSummary),
+    summary_resolver_view(
+        BSummary, resolver_summary(card(1,1), BFacts, _)),
+    assertion(memberchk(proper_bool, BFacts)),
+    once(member(clause_result(solver_mutual_b, 0, _,
+                              analyzed(_, _, _, BAnalysis)), Results)),
+    assertion(analysis_result_has_fact(BAnalysis, proper_bool)).
+
+test(summary_delta_is_set_normalized_and_ignores_diagnostics) :-
+    Left = [function_summary(
+                normalized_summary, 0, card(1,1),
+                [proper_bool, type('Bool')],
+                [pure, call(helper/0)], [initial])],
+    Right = [function_summary(
+                 normalized_summary, 0, card(1,1),
+                 [type('Bool'), proper_bool],
+                 [call(helper/0), pure], [different_diagnostic])],
+    summary_resolver_view_unchanged(
+        normalized_summary/0, Left, Right).
+
+test(retained_results_project_distinct_variant_occurrences,
+     [setup(assertz((user:fn_decl_arity(
+                         solver_identity, 1, ['Atom'], 'Bool')))),
+      cleanup(retractall(user:fn_decl_arity(
+                             solver_identity, _, _, _)))]) :-
+    First = [=, [solver_identity, X], true],
+    Second = [=, [solver_identity, Y], true],
+    Sources = [clause_source(solver_identity, 1, First),
+               clause_source(solver_identity, 1, Second)],
+    prepare_clause_universe(Sources, Prepared),
+    source_keys(Sources, Keys),
+    initial_touched_summaries(Keys, Initial),
+    solve_fixed_point_counted(
+        Prepared, Keys, Initial, _, Results, Count),
+    assertion(Count == 2),
+    clause_records_from_results(Sources, Results, [FirstRecord, SecondRecord]),
+    FirstRecord = clause_record(StoredFirst, _, FirstEnv, _, _),
+    SecondRecord = clause_record(StoredSecond, _, SecondEnv, _, _),
+    assertion(StoredFirst == First),
+    assertion(StoredSecond == Second),
+    member(binding(_, FirstVar), FirstEnv), FirstVar == X,
+    member(binding(_, SecondVar), SecondEnv), SecondVar == Y,
+    assertion(FirstVar \== SecondVar).
 
 test(branch_projection_does_not_bind_parametric_candidate,
      [cleanup(del_attrs(Value))]) :-
