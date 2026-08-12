@@ -617,8 +617,11 @@ solve_recursive_component(Clauses, Keys, Graph, Current, Solved,
     length(Keys, KeyCount),
     MaxSteps is 32 * max(1, KeyCount),
     solve_recursive_worklist(Keys, Keys, Graph, Clauses,
-                             Current, Solved, [], ClauseResults,
-                             MaxSteps, Count0, Count).
+                             Current, BaseSolved, [], BaseClauseResults,
+                             MaxSteps, Count0, Count1),
+    infer_recursive_result_facts(Clauses, Keys, BaseSolved,
+                                 BaseClauseResults, Solved, ClauseResults,
+                                 Count1, Count).
 
 solve_recursive_worklist([], _, _, _, Summaries, Summaries,
                          ClauseResults, ClauseResults, _, Count, Count).
@@ -654,6 +657,128 @@ component_callers(Callee, Keys, Graph, Callers) :-
               memberchk(Callee, Neighbors) ),
             Callers0),
     sort(Callers0, Callers).
+
+% Recursive cardinality/effect summaries are solved above from the ordinary
+% least fixed point.  Universal facts about every value a call can return need
+% the dual treatment: starting recursive calls with no facts makes a property
+% such as `proper_bool` disappear at the first recursive join and it can never
+% re-enter the lattice, even when every finite result is `true` or `false`.
+%
+% Prove these partial-correctness facts coinductively, one fact at a time.  A
+% result declaration only proposes a finite candidate; it never certifies it.
+% The candidate is assumed for calls to the still-candidate members of this
+% SCC, every clause is analyzed, and any member which does not rederive the
+% fact on its result is removed.  Candidate sets only shrink.  Unsupported
+% clauses and analyses with no proved result fact therefore reject the
+% hypothesis conservatively.
+%
+% Keeping each fact in an independent pass is important.  Simultaneously
+% assuming incompatible facts could make paths unreachable and manufacture a
+% vacuous proof.  The established facts are added only to the exported
+% summaries. Cards, effects and diagnostics remain exactly those produced by
+% the ordinary solver; retained codegen analyses are refreshed once under the
+% proved facts so translation consumes the same final contract.
+infer_recursive_result_facts(Clauses, Keys, Base, BaseResults,
+                             Solved, ClauseResults, Count0, Count) :-
+    findall(Fact, coinductive_result_fact(Fact), Facts),
+    prove_recursive_result_facts(Facts, Clauses, Keys, Base,
+                                 Proven, Count0, Count1),
+    add_proven_result_facts(Proven, Base, Solved),
+    finalize_recursive_result_fact_analyses(
+        Proven, Clauses, Solved, BaseResults, ClauseResults,
+        Count1, Count).
+
+coinductive_result_fact(proper_bool).
+
+prove_recursive_result_facts([], _, _, _, [], Count, Count).
+prove_recursive_result_facts([Fact|Facts], Clauses, Keys, Base,
+                             Proven, Count0, Count) :-
+    include(result_fact_candidate(Fact), Keys, Candidates),
+    prove_recursive_result_fact(Candidates, Fact, Clauses, Base,
+                                Survivors, Count0, Count1),
+    fact_proofs(Survivors, Fact, Here),
+    prove_recursive_result_facts(Facts, Clauses, Keys, Base,
+                                 Rest, Count1, Count),
+    append(Here, Rest, Proven).
+
+% `Bool` suggests `proper_bool`, but an open Bool-typed result still has to
+% fail the preservation proof below.  Future coinductive facts extend this
+% proposal relation rather than changing the fixed-point algorithm.
+result_fact_candidate(proper_bool, F/N) :-
+    unique_declared_result_type(F, N, 'Bool').
+
+unique_declared_result_type(F, N, Expected) :-
+    findall(Output,
+            declared_signature_candidate(F, N, _, Output),
+            Outputs0),
+    variant_dedup(Outputs0, Outputs),
+    Outputs = [Output],
+    Output == Expected.
+
+prove_recursive_result_fact([], _, _, _, [], Count, Count) :- !.
+prove_recursive_result_fact(Candidates, Fact, Clauses, Base,
+                            Survivors, Count0, Count) :-
+    summaries_with_result_hypothesis(Base, Candidates, Fact, Hypotheses),
+    analyze_clause_universe(Clauses, Hypotheses, Analyses),
+    include(key_preserves_result_fact(Analyses, Fact),
+            Candidates, Retained0),
+    sort(Retained0, Retained),
+    length(Clauses, ClauseCount),
+    Count1 is Count0 + ClauseCount,
+    ( Retained == Candidates
+      -> Survivors = Retained, Count = Count1
+    ; prove_recursive_result_fact(Retained, Fact, Clauses, Base,
+                                  Survivors, Count1, Count) ).
+
+summaries_with_result_hypothesis([], _, _, []).
+summaries_with_result_hypothesis(
+        [function_summary(F, N, Card, Facts, Effects, Diagnostics)|Summaries],
+        Candidates, Fact,
+        [function_summary(F, N, Card, HypothesisFacts,
+                          Effects, Diagnostics)|Hypotheses]) :-
+    ( memberchk(F/N, Candidates)
+      -> sort([Fact|Facts], HypothesisFacts)
+    ; HypothesisFacts = Facts ),
+    summaries_with_result_hypothesis(Summaries, Candidates, Fact,
+                                     Hypotheses).
+
+key_preserves_result_fact(Analyses, Fact, F/N) :-
+    findall(Outcome,
+            member(clause_result(F, N, _, Outcome), Analyses),
+            Outcomes),
+    Outcomes = [_|_],
+    maplist(analyzed_result_has_fact(Fact), Outcomes).
+
+analyzed_result_has_fact(Fact, analyzed(_, _, _, Analysis)) :-
+    analysis_result_has_fact(Analysis, Fact).
+
+fact_proofs([], _, []).
+fact_proofs([Key|Keys], Fact, [proved_result_fact(Key, Fact)|Proofs]) :-
+    fact_proofs(Keys, Fact, Proofs).
+
+add_proven_result_facts([], Summaries, Summaries).
+add_proven_result_facts([proved_result_fact(F/N, Fact)|Proofs], Base, Solved) :-
+    add_summary_result_fact(F, N, Fact, Base, WithFact),
+    add_proven_result_facts(Proofs, WithFact, Solved).
+
+add_summary_result_fact(_, _, _, [], []).
+add_summary_result_fact(
+        F, N, Fact,
+        [function_summary(F0, N0, Card, Facts, Effects, Diagnostics)|Summaries],
+        [function_summary(F0, N0, Card, UpdatedFacts,
+                          Effects, Diagnostics)|Updated]) :-
+    ( F == F0, N =:= N0
+      -> sort([Fact|Facts], UpdatedFacts)
+    ; UpdatedFacts = Facts ),
+    add_summary_result_fact(F, N, Fact, Summaries, Updated).
+
+finalize_recursive_result_fact_analyses([], _, _, Results, Results,
+                                        Count, Count) :- !.
+finalize_recursive_result_fact_analyses(_, Clauses, Solved, _, Results,
+                                        Count0, Count) :-
+    analyze_clause_universe(Clauses, Solved, Results),
+    length(Clauses, ClauseCount),
+    Count is Count0 + ClauseCount.
 
 % Only these fields are observable by bridge_resolve_call/5.  Diagnostics are
 % retained in the full summary for reporting, but a seed-only diagnostic such
@@ -961,7 +1086,9 @@ refresh_pending_cache_entries(Pending, Events) :-
 % -- Legacy resolvers ----------------------------------------------------
 
 bridge_resolve_type(declared_arg(F, Arity, Index), Type) :-
-    findall(ATs, user:fn_decl_arity(F, Arity, ATs, _), Declarations0),
+    findall(ATs,
+            declared_signature_candidate(F, Arity, ATs, _),
+            Declarations0),
     variant_dedup(Declarations0, Declarations),
     Declarations = [ArgTypes],
     nth0(Index, ArgTypes, Type).
@@ -969,7 +1096,7 @@ bridge_resolve_type(declared_arg(F, Arity, Index), Type) :-
 bridge_constructor_signature(Tag, Arity, ArgTypes, ResultType) :-
     atom(Tag), integer(Arity),
     findall(ATs-OT,
-            user:fn_decl_arity(Tag, Arity, ATs, OT),
+            declared_signature_candidate(Tag, Arity, ATs, OT),
             Candidates0),
     variant_dedup(Candidates0, Candidates),
     Candidates = [ArgTypes-ResultType].
@@ -991,10 +1118,26 @@ bridge_resolve_call(Summaries, F, ArgIds, _, Resolution) :-
     ; Resolution = unknown ).
 
 declared_result_facts(F, N, Facts) :-
-    findall(OT, user:fn_decl_arity(F, N, _, OT), Outputs0),
+    findall(OT, declared_signature_candidate(F, N, _, OT), Outputs0),
     variant_dedup(Outputs0, [Output]), !,
     ( ground(Output) -> Facts = [type(Output)] ; Facts = [] ).
 declared_result_facts(_, _, []).
+
+% Production exposes the normalized fn_decl_arity/4 view.  The core module
+% matrix deliberately loads this bridge without the legacy declaration store,
+% so its fixtures install equivalent canonical fn_decl/6 records directly.
+% Keeping the fallback here also avoids making the solver depend on load order.
+declared_signature_candidate(F, N, ArgTypes, Output) :-
+    current_predicate(user:fn_decl_arity/4),
+    user:fn_decl_arity(F, N, ArgTypes, Output).
+declared_signature_candidate(F, N, ArgTypes, Output) :-
+    \+ normalized_signature_available(F, N),
+    current_predicate(user:fn_decl/6),
+    user:fn_decl(F, N, scheme(ArgTypes, Output), _, _, _).
+
+normalized_signature_available(F, N) :-
+    current_predicate(user:fn_decl_arity/4),
+    once(user:fn_decl_arity(F, N, _, _)).
 
 facts_posts([], []).
 facts_posts([Fact|Facts], [ensure(result, Fact)|Posts]) :-
@@ -1406,6 +1549,199 @@ test(recursive_worklist_retains_final_propagated_analysis) :-
     once(member(clause_result(solver_mutual_b, 0, _,
                               analyzed(_, _, _, BAnalysis)), Results)),
     assertion(analysis_result_has_fact(BAnalysis, proper_bool)).
+
+% Result-shape facts are partial-correctness properties: if a recursive call
+% returns, its result must have the advertised shape.  A least fixed point
+% cannot discover such a property when every base result is separated from
+% the caller by a recursive edge.  These tests exercise the greatest-fixed-
+% point part of the recursive solver without granting the same coinductive
+% treatment to cardinality, effects, or productivity.
+
+test(recursive_self_bool_uses_greatest_fixed_point,
+     [setup(gfp_test_install_bool_declarations(
+                [gfp_self_bool-['Atom']])),
+      cleanup(gfp_test_clear_declarations([gfp_self_bool/1]))]) :-
+    Sources = [
+        clause_source(
+            gfp_self_bool, 1,
+            [=, [gfp_self_bool, X],
+                [if, [==, X, base], false, [gfp_self_bool, X]]])
+    ],
+    gfp_test_solve(Sources, Summaries, Results),
+    gfp_test_summary_has_fact(
+        gfp_self_bool/1, Summaries, proper_bool),
+    summary_for_key(
+        gfp_self_bool/1, Summaries,
+        function_summary(_, _, card(0,many), [proper_bool],
+                         [opaque,pure], [])),
+    gfp_test_retained_analysis_has_fact(
+        gfp_self_bool/1, Results, proper_bool),
+    var(X).
+
+test(recursive_mutual_bool_uses_greatest_fixed_point,
+     [setup(gfp_test_install_bool_declarations(
+                [gfp_mutual_a-['Atom'], gfp_mutual_b-['Atom']])),
+      cleanup(gfp_test_clear_declarations(
+                  [gfp_mutual_a/1, gfp_mutual_b/1]))]) :-
+    Sources = [
+        clause_source(
+            gfp_mutual_a, 1,
+            [=, [gfp_mutual_a, A],
+                [if, [==, A, base], true, [gfp_mutual_b, A]]]),
+        clause_source(
+            gfp_mutual_b, 1,
+            [=, [gfp_mutual_b, B],
+                [if, [==, B, base], false, [gfp_mutual_a, B]]])
+    ],
+    gfp_test_solve(Sources, Summaries, Results),
+    forall(member(Key, [gfp_mutual_a/1, gfp_mutual_b/1]),
+           ( gfp_test_summary_has_fact(Key, Summaries, proper_bool),
+             gfp_test_retained_analysis_has_fact(
+                 Key, Results, proper_bool) )),
+    var(A), var(B).
+
+test(recursive_bool_candidate_removed_by_unbound_base,
+     [setup(gfp_test_install_bool_declarations(
+                [gfp_unbound_base-['Bool', 'Atom']])),
+      cleanup(gfp_test_clear_declarations([gfp_unbound_base/2]))]) :-
+    Sources = [
+        clause_source(
+            gfp_unbound_base, 2,
+            [=, [gfp_unbound_base, Value, Flag],
+                [if, [==, Flag, base], Value,
+                     [gfp_unbound_base, Value, Flag]]])
+    ],
+    gfp_test_solve(Sources, Summaries, _),
+    gfp_test_summary_lacks_fact(
+        gfp_unbound_base/2, Summaries, proper_bool),
+    var(Value), var(Flag).
+
+test(recursive_bool_candidate_removed_by_unsupported_clause,
+     [setup(gfp_test_install_bool_declarations(
+                [gfp_unsupported_bool-['Atom']])),
+      cleanup(gfp_test_clear_declarations([gfp_unsupported_bool/1]))]) :-
+    Sources = [
+        clause_source(
+            gfp_unsupported_bool, 1,
+            [=, [gfp_unsupported_bool, X],
+                [if, [==, X, base], true,
+                     [gfp_unsupported_bool, X]]]),
+        clause_source(
+            gfp_unsupported_bool, 1,
+            [=, [gfp_unsupported_bool, Y], [case, Y, [bad]]])
+    ],
+    gfp_test_solve(Sources, Summaries, _),
+    gfp_test_summary_lacks_fact(
+        gfp_unsupported_bool/1, Summaries, proper_bool),
+    summary_for_key(
+        gfp_unsupported_bool/1, Summaries,
+        function_summary(_, _, _, _, [opaque], Diagnostics)),
+    assertion(Diagnostics = [unsupported_clauses(_)]),
+    var(X), var(Y).
+
+test(recursive_bool_multiclause_requires_every_clause,
+     [setup(gfp_test_install_bool_declarations(
+                [gfp_multiclause_bool-['Bool']])),
+      cleanup(gfp_test_clear_declarations([gfp_multiclause_bool/1]))]) :-
+    Sources = [
+        clause_source(
+            gfp_multiclause_bool, 1,
+            [=, [gfp_multiclause_bool, X],
+                [if, [==, X, true], true,
+                     [gfp_multiclause_bool, X]]]),
+        clause_source(
+            gfp_multiclause_bool, 1,
+            [=, [gfp_multiclause_bool, Y], Y])
+    ],
+    gfp_test_solve(Sources, Summaries, _),
+    gfp_test_summary_lacks_fact(
+        gfp_multiclause_bool/1, Summaries, proper_bool),
+    var(X), var(Y).
+
+test(recursive_bool_candidates_are_removed_independently,
+     [setup(gfp_test_install_bool_declarations(
+                [gfp_mixed_bad-['Bool', 'Atom'],
+                 gfp_mixed_good-['Bool', 'Atom']])),
+      cleanup(gfp_test_clear_declarations(
+                  [gfp_mixed_bad/2, gfp_mixed_good/2]))]) :-
+    Sources = [
+        clause_source(
+            gfp_mixed_bad, 2,
+            [=, [gfp_mixed_bad, ValueA, FlagA],
+                [if, [==, FlagA, base], ValueA,
+                     [gfp_mixed_good, ValueA, FlagA]]]),
+        clause_source(
+            gfp_mixed_good, 2,
+            [=, [gfp_mixed_good, ValueB, FlagB],
+                [if, [gfp_mixed_bad, ValueB, FlagB], true, false]])
+    ],
+    gfp_test_solve(Sources, Summaries, Results),
+    gfp_test_summary_lacks_fact(
+        gfp_mixed_bad/2, Summaries, proper_bool),
+    gfp_test_summary_has_fact(
+        gfp_mixed_good/2, Summaries, proper_bool),
+    gfp_test_retained_analysis_has_fact(
+        gfp_mixed_good/2, Results, proper_bool),
+    var(ValueA), var(FlagA), var(ValueB), var(FlagB).
+
+test(recursive_bool_candidate_removal_is_transitive,
+     [setup(gfp_test_install_bool_declarations(
+                [gfp_transitive_bad-['Bool', 'Atom'],
+                 gfp_transitive_forward-['Bool', 'Atom']])),
+      cleanup(gfp_test_clear_declarations(
+                  [gfp_transitive_bad/2, gfp_transitive_forward/2]))]) :-
+    Sources = [
+        clause_source(
+            gfp_transitive_bad, 2,
+            [=, [gfp_transitive_bad, ValueA, FlagA],
+                [if, [==, FlagA, base], ValueA,
+                     [gfp_transitive_forward, ValueA, FlagA]]]),
+        clause_source(
+            gfp_transitive_forward, 2,
+            [=, [gfp_transitive_forward, ValueB, FlagB],
+                [gfp_transitive_bad, ValueB, FlagB]])
+    ],
+    gfp_test_solve(Sources, Summaries, _),
+    forall(member(Key,
+                  [gfp_transitive_bad/2, gfp_transitive_forward/2]),
+           gfp_test_summary_lacks_fact(Key, Summaries, proper_bool)),
+    var(ValueA), var(FlagA), var(ValueB), var(FlagB).
+
+gfp_test_install_bool_declarations([]).
+gfp_test_install_bool_declarations([F-ArgTypes|Declarations]) :-
+    length(ArgTypes, N),
+    assertz(user:fn_decl(
+                F, N, scheme(ArgTypes, 'Bool'), effect_model(det, []),
+                test(unified_checker_gfp),
+                provenance(test(unified_checker_gfp), syntax(test)))),
+    gfp_test_install_bool_declarations(Declarations).
+
+gfp_test_clear_declarations([]).
+gfp_test_clear_declarations([F/N|Keys]) :-
+    retractall(user:fn_decl(
+                   F, N, _, _, test(unified_checker_gfp), _)),
+    gfp_test_clear_declarations(Keys).
+
+gfp_test_solve(Sources, Summaries, Results) :-
+    prepare_clause_universe(Sources, Prepared),
+    source_keys(Sources, Keys),
+    initial_touched_summaries(Keys, Initial),
+    solve_fixed_point(Prepared, Keys, Initial, 0, Summaries, Results).
+
+gfp_test_summary_has_fact(F/N, Summaries, Fact) :-
+    summary_for_key(
+        F/N, Summaries, function_summary(F, N, _, Facts, _, _)),
+    assertion(memberchk(Fact, Facts)).
+
+gfp_test_summary_lacks_fact(F/N, Summaries, Fact) :-
+    summary_for_key(
+        F/N, Summaries, function_summary(F, N, _, Facts, _, _)),
+    assertion(\+ memberchk(Fact, Facts)).
+
+gfp_test_retained_analysis_has_fact(F/N, Results, Fact) :-
+    once(member(clause_result(
+                    F, N, _, analyzed(_, _, _, Analysis)), Results)),
+    assertion(analysis_result_has_fact(Analysis, Fact)).
 
 test(summary_delta_is_set_normalized_and_ignores_diagnostics) :-
     Left = [function_summary(

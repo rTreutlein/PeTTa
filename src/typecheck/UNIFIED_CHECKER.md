@@ -88,6 +88,15 @@ only when the resolver-visible callee contract changes. Equivalent copies made
 by dependency recompilation reuse an aligned prepared record while its file
 scope exists.
 
+Recursive result-shape properties use a separate greatest-fixed-point pass.
+For each finite candidate fact, such as `proper_bool` for a declared `Bool`
+result, the checker provisionally assumes that one fact inside the recursive
+component, analyzes every clause, and monotonically removes functions which do
+not preserve it. The declaration proposes a candidate but never proves it;
+one open or unsupported result removes the fact transitively. Cardinality,
+effects, and productivity remain products of the ordinary solver and are not
+accepted coinductively.
+
 Closed, ground function summaries are cached between source batches in the
 same SWI process. Cache rows contain no source variables, clause records, or
 IR; they carry a separate ground dependency set for clause sets, declarations,
