@@ -389,7 +389,46 @@ cache_fn_type_decl(Name, Type, ATs, OT, Det, Origin, Provenance) :-
 decl_notify(_) :-
     catch(b_getval('$suppress_decl_notifications', true), _, fail), !.
 decl_notify(Event) :-
+    catch(nb_getval('$batched_decl_notifications', Events0), _, fail),
+    is_list(Events0), !,
+    nb_setval('$batched_decl_notifications', [Event|Events0]).
+decl_notify(Event) :-
     notify_mutation(Event).
+
+:- meta_predicate with_decl_notifications_batched(0).
+
+% Function declarations are hoisted as one file-level prepass.  Consumers
+% should therefore be rebuilt against that final declaration set, not once for
+% every intermediate prefix of it.  Nested batching contributes to the outer
+% queue; the outermost scope restores notification mode before flushing.
+with_decl_notifications_batched(Goal) :-
+    ( catch(nb_getval('$batched_decl_notifications', Existing), _, fail),
+      is_list(Existing)
+      -> call(Goal)
+    ; setup_call_cleanup(
+          push_decl_notification_batch(Saved),
+          call(Goal),
+          pop_and_flush_decl_notification_batch(Saved)) ).
+
+push_decl_notification_batch(saved(yes, Previous)) :-
+    catch(nb_getval('$batched_decl_notifications', Previous), _, fail), !,
+    nb_setval('$batched_decl_notifications', []).
+push_decl_notification_batch(saved(no, none)) :-
+    nb_setval('$batched_decl_notifications', []).
+
+pop_and_flush_decl_notification_batch(Saved) :-
+    ( catch(nb_getval('$batched_decl_notifications', Reversed), _, fail)
+      -> true
+    ; Reversed = [] ),
+    restore_decl_notification_batch(Saved),
+    reverse(Reversed, Ordered),
+    list_to_set(Ordered, Events),
+    notify_mutations(Events).
+
+restore_decl_notification_batch(saved(yes, Previous)) :- !,
+    nb_setval('$batched_decl_notifications', Previous).
+restore_decl_notification_batch(_) :-
+    catch(nb_delete('$batched_decl_notifications'), _, true).
 
 with_decl_notifications_suppressed(Goal) :-
     catch(b_getval('$suppress_decl_notifications', Saved), _, Saved = false),
@@ -887,7 +926,7 @@ affected_decl_functions(Names, Fs) :-
 
 forget_symbol_types(Name) :- remove_all_fn_decl_records(Name),
                              unified_checker_invalidate_event(
-                                 broad_mutation(forget_symbol_types(Name))),
+                                 generated_specialization_removed(Name)),
                              retractall(nonfn_decl_origin(Name, _)),
                              retractall(declared_value_type(Name, _)),
                              retractall(declared_newtype(Name, _)),

@@ -101,18 +101,101 @@ forget_validation_dependencies(Key) :-
 notify_mutation(clause_changed(FN)) :- !,
     notify_mutation(clause_changed(FN, runtime)).
 notify_mutation(Event) :-
-    mutation_seed_functions(Event, Seed),
-    notify_mutation_queue([Event], graph_state(Seed, []), _).
+    notify_mutations([Event]).
+
+notify_mutations(Events) :-
+    mutation_seed_functions_all(Events, Seed),
+    State0 = graph_state(Seed, []),
+    maplist(invalidate_mutation_event, Events),
+    planned_recompile_functions(Events, State0, Functions),
+    with_unified_recompile_analysis(
+        Functions,
+        notify_mutation_queue(Events, State0, _)).
+
+mutation_seed_functions_all(Events, Seed) :-
+    findall(F,
+            ( member(Event, Events),
+              mutation_seed_functions(Event, Functions),
+              member(F, Functions) ),
+            Seed0),
+    sort(Seed0, Seed).
 
 notify_mutation_queue([], State, State).
-notify_mutation_queue([Event|Events], State0, State) :-
+notify_mutation_queue(Events, State0, State) :-
+    affected_compiled_functions_all(Events, Functions),
+    pending_recompile_functions(Functions, State0, PendingFunctions),
+    recompile_affected_functions(
+        PendingFunctions, event_batch(Events), State0, State1, MoreEvents),
+    revalidate_mutation_events(Events, State1, State2),
+    maplist(invalidate_mutation_event, MoreEvents),
+    notify_mutation_queue(MoreEvents, State2, State).
+
+% Recompilation does not change MeTTa source clauses, but every rebuilt
+% function publishes a derived clause-set event which wakes its callers.  Walk
+% that reverse-dependency cascade before compiling anything so the unified
+% checker can solve the union once.  The real queue below still recompiles in
+% its established order and emits every notification immediately; this plan is
+% used only to size the ephemeral analysis scope.
+planned_recompile_functions(Events, State0, Functions) :-
+    planned_recompile_functions_(Events, State0, [], Reversed),
+    reverse(Reversed, Functions).
+
+planned_recompile_functions_([], _, Functions, Functions).
+planned_recompile_functions_(Events, State0, Acc0, Functions) :-
+    affected_compiled_functions_all(Events, Affected),
+    pending_recompile_functions(Affected, State0, Pending),
+    planned_function_events(Pending, MoreEvents),
+    State0 = graph_state(Visited0, Validated),
+    append(Pending, Visited0, Visited),
+    reverse(Pending, PendingReversed),
+    append(PendingReversed, Acc0, Acc),
+    planned_recompile_functions_(
+        MoreEvents, graph_state(Visited, Validated), Acc, Functions).
+
+planned_function_events([], []).
+planned_function_events([F|Functions], Events) :-
+    compiled_function_arities(F, Arities),
+    findall(clause_changed(F/N, derived), member(N, Arities), Here),
+    planned_function_events(Functions, Rest),
+    append(Here, Rest, Events).
+
+invalidate_mutation_event(Event) :-
     unified_checker_invalidate_event(Event),
-    analysis_cache_invalidate_event(Event),
-    affected_compiled_functions(Event, Functions),
-    recompile_affected_functions(Functions, Event, State0, State1, MoreEvents),
-    revalidate_affected_consumers(Event, State1, State2),
-    append(MoreEvents, Events, Queue),
-    notify_mutation_queue(Queue, State2, State).
+    analysis_cache_invalidate_event(Event).
+
+affected_compiled_functions_all(Events, Functions) :-
+    findall(F,
+            ( member(Event, Events),
+              affected_compiled_functions(Event, Affected),
+              member(F, Affected) ),
+            Functions0),
+    sort(Functions0, Sorted),
+    mutation_owner_functions(Events, Owners),
+    include(member_of(Sorted), Owners, Prioritized),
+    subtract(Sorted, Prioritized, Rest),
+    append(Prioritized, Rest, Functions).
+
+mutation_owner_functions(Events, Owners) :-
+    findall(F,
+            ( member(Event, Events), mutation_owner_function(Event, F) ),
+            Owners0),
+    list_to_set(Owners0, Owners).
+
+mutation_owner_function(declaration_changed(F/_, _), F).
+mutation_owner_function(clause_changed(F/_, runtime), F).
+
+member_of(List, Value) :- memberchk(Value, List).
+
+revalidate_mutation_events([], State, State).
+revalidate_mutation_events([Event|Events], State0, State) :-
+    revalidate_affected_consumers(Event, State0, State1),
+    revalidate_mutation_events(Events, State1, State).
+
+pending_recompile_functions(Functions, graph_state(Visited, _), Pending) :-
+    exclude(already_visited_function(Visited), Functions, Pending).
+
+already_visited_function(Visited, Function) :-
+    memberchk(Function, Visited).
 
 %A source-load clause has already been validated against the file's complete
 %prepass, and a derived event names the function the graph just rebuilt.  A
@@ -253,6 +336,9 @@ mutation_dependency_matches(declaration_changed(newtype, Name, added),
 mutation_dependency_matches(constructor_set_changed(Type, _), ctor_set(Type)).
 mutation_dependency_matches(broad_mutation(_), _).
 
+mutation_recompile_diagnostic(event_batch(Events), F) :- !,
+    forall(member(Event, Events),
+           mutation_recompile_diagnostic(Event, F)).
 mutation_recompile_diagnostic(constructor_set_changed(_, _), F) :- !,
     format(user_error,
            "Warning: a constructor declared after ~w was compiled changes a type it matched on; recompiling ~w~n",

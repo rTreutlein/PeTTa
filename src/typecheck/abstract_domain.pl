@@ -13,6 +13,7 @@
             card_satisfies/2,
             state_empty/1,
             state_add_fact/4,
+            state_add_facts/4,
             state_has_fact/3,
             state_facts/3,
             state_remove_fact/4,
@@ -183,9 +184,42 @@ state_empty(state([])).
 %   Add Fact unless a variant is already present for ValueId.
 
 state_add_fact(state(Entries0), ValueId, Fact, State) :-
+    state_add_facts(state(Entries0), ValueId, [Fact], State).
+
+%!  state_add_facts(+State0, +ValueId, +Facts, -State) is det.
+%
+%   Bulk variant of state_add_fact/4.  Analyzer fact closure commonly adds
+%   four to seven implications at once; rebuilding and detaching the complete
+%   immutable map after every individual fact dominated large-file checking.
+
+state_add_facts(state(Entries0), ValueId, Facts, State) :-
     require_ground_value_id(ValueId),
-    add_fact_entries(Entries0, ValueId, Fact, Entries),
+    add_facts_entries(Entries0, ValueId, Facts, Entries),
     detached_state(Entries, State).
+
+add_facts_entries([], ValueId, Facts0, Entries) :-
+    variant_dedup_facts(Facts0, Facts),
+    ( Facts == [] -> Entries = [] ; Entries = [entry(ValueId, Facts)] ).
+add_facts_entries([entry(Key, Facts0)|Entries], ValueId, NewFacts,
+                  [entry(Key, Facts)|Entries]) :-
+    same_value_id(Key, ValueId), !,
+    append_new_facts(NewFacts, Facts0, Facts).
+add_facts_entries([Entry|Entries0], ValueId, Facts,
+                  [Entry|Entries]) :-
+    add_facts_entries(Entries0, ValueId, Facts, Entries).
+
+append_new_facts([], Facts, Facts).
+append_new_facts([Fact|NewFacts], Facts0, Facts) :-
+    ( variant_member(Fact, Facts0)
+      -> Facts1 = Facts0
+    ; append(Facts0, [Fact], Facts1) ),
+    append_new_facts(NewFacts, Facts1, Facts).
+
+variant_dedup_facts([], []).
+variant_dedup_facts([Fact|Facts], Unique) :-
+    ( variant_member(Fact, Facts)
+      -> variant_dedup_facts(Facts, Unique)
+    ; Unique = [Fact|Rest], variant_dedup_facts(Facts, Rest) ).
 
 add_fact_entries([], ValueId, Fact, [entry(ValueId, [Fact])]).
 add_fact_entries([entry(Key, Facts0)|Entries], ValueId, Fact,
@@ -386,6 +420,16 @@ test(state_remove_fact_and_empty_entry) :-
     state_has_fact(S3, v, effect(det)),
     state_remove_fact(S3, v, effect(det), S4),
     state_facts(S4, v, []).
+
+test(state_add_facts_is_variant_safe_and_detached) :-
+    state_empty(S0),
+    state_add_facts(S0, v, [type(pair(X, X)), marker,
+                             type(pair(Y, Y))], S1),
+    X = changed,
+    Y = changed_too,
+    state_facts(S1, v, Facts),
+    Facts = [marker, type(pair(Stored, Stored))],
+    var(Stored).
 
 test(state_join_is_common_path_knowledge) :-
     state_empty(S0),

@@ -2,6 +2,7 @@
           [ with_unified_file_analysis/2,
             with_unified_clause_analysis/2,
             with_unified_ad_hoc_clause_analysis/2,
+            with_unified_recompile_analysis/2,
             with_unified_edge_facts/3,
             with_unified_preanalyzed_form/1,
             current_unified_clause_analysis/5,
@@ -23,10 +24,13 @@ result-shape decisions come from `ir_analyzer` records.
 :- use_module(ir_analyzer).
 :- use_module(relational_ir).
 :- use_module(library(lists)).
+:- use_module(library(ordsets)).
+:- use_module(library(ugraphs)).
 
 :- meta_predicate with_unified_file_analysis(+, 0).
 :- meta_predicate with_unified_clause_analysis(+, 0).
 :- meta_predicate with_unified_ad_hoc_clause_analysis(+, 0).
+:- meta_predicate with_unified_recompile_analysis(+, 0).
 :- meta_predicate with_unified_edge_facts(+, +, 0).
 :- meta_predicate with_unified_preanalyzed_form(0).
 
@@ -44,6 +48,30 @@ with_unified_file_analysis(ParsedForms, Goal) :-
           push_bridge_scope(scope(Generation, Summaries, ClauseRecords), Saved),
           call(Goal),
           pop_bridge_scope(Saved)) ).
+
+% Dependency invalidation may rebuild several functions, each with several
+% clauses.  All of them observe one post-mutation program state, so analyze the
+% union of their direct-call closures once and keep that result in an ephemeral
+% scope for the complete staged rebuild.  This is deliberately not a persistent
+% cache: the next semantic event still starts from the current stored clauses.
+with_unified_recompile_analysis(Functions, Goal) :-
+    recompile_clause_sources(Functions, Universe, Sources),
+    ( Sources == []
+      -> call(Goal)
+    ; solve_source_closure(Sources, Universe, Summaries, Prepared),
+      analyze_pending(Sources, Prepared, Summaries, Records),
+      current_bridge_generation(Generation),
+      setup_call_cleanup(
+          push_bridge_scope(scope(Generation, Summaries, Records), Saved),
+          call(Goal),
+          pop_bridge_scope(Saved)) ).
+
+recompile_clause_sources(Functions, Universe, Sources) :-
+    current_stored_clause_sources(Universe),
+    include(source_owned_by(Functions), Universe, Sources).
+
+source_owned_by(Functions, clause_source(F, _, _)) :-
+    memberchk(F, Functions).
 
 with_unified_clause_analysis(Source, Goal) :-
     ( bridge_scope(scope(_, _, Records)),
@@ -187,6 +215,13 @@ unified_checker_invalidate_event(Event) :-
 
 maybe_invalidate_active_scope(clause_changed(_, prevalidated)) :- !.
 maybe_invalidate_active_scope(clause_changed(_, derived)) :- !.
+maybe_invalidate_active_scope(declaration_changed(F/_, added)) :-
+    catch(user:ho_specialization(_, F), _, fail), !.
+% Higher-order specializations are compiler artifacts.  Unified summaries are
+% derived from the original MeTTa clauses and never rely on those generated
+% symbols, so deleting an obsolete specialization must clear dormant cache
+% rows without invalidating an in-flight source-analysis scope.
+maybe_invalidate_active_scope(generated_specialization_removed(_)) :- !.
 % Ordinary source forms belong to the batch being compiled. Runtime mutation
 % from a runnable does not enter this scope and invalidates the generation.
 maybe_invalidate_active_scope(_) :-
@@ -247,14 +282,26 @@ existing_clause_source(F, N, Source) :-
 % mutation in the same source batch.  Nothing from this computation is asserted
 % into unified_function_summary/6.
 current_stored_summaries(Source, Summaries) :-
-    source_clause_key(Source, Root),
+    source_clause_key(Source, F/N),
+    solve_current_source_closure(
+        [clause_source(F, N, Source)], Summaries, _).
+
+solve_current_source_closure(RootSources, Summaries, Relevant) :-
     current_stored_clause_sources(Stored),
-    ensure_source_in_universe(Source, Root, Stored, Sources),
+    ensure_sources_in_universe(RootSources, Stored, Sources),
+    solve_source_closure(RootSources, Sources, Summaries, Relevant).
+
+solve_source_closure(RootSources, Sources, Summaries, Relevant) :-
+    source_keys(RootSources, Roots),
     prepare_clause_universe(Sources, Prepared),
-    reachable_prepared_keys([Root], Prepared, Keys),
+    reachable_prepared_keys(Roots, Prepared, Keys),
     include(prepared_for_keys(Keys), Prepared, Relevant),
     initial_touched_summaries(Keys, Initial),
     solve_fixed_point(Relevant, Keys, Initial, 0, Summaries).
+
+source_keys(Sources, Keys) :-
+    findall(F/N, member(clause_source(F, N, _), Sources), Keys0),
+    sort(Keys0, Keys).
 
 source_clause_key([Eq, [F|Args], _], F/N) :-
     Eq == (=), atom(F), is_list(Args), length(Args, N).
@@ -273,6 +320,12 @@ ensure_source_in_universe(Source, Root, Stored, Sources) :-
       -> Sources = Stored
     ; clause_source_for_key(Root, Source, Clause),
       Sources = [Clause|Stored] ).
+
+ensure_sources_in_universe([], Sources, Sources).
+ensure_sources_in_universe([clause_source(F, N, Source)|Roots], Stored,
+                           Sources) :-
+    ensure_source_in_universe(Source, F/N, Stored, WithSource),
+    ensure_sources_in_universe(Roots, WithSource, Sources).
 
 clause_source_for_key(F/N, Source, clause_source(F, N, Source)).
 
@@ -326,16 +379,108 @@ initial_touched_summaries([F/N|Keys],
                                             [initial])|Rest]) :-
     initial_touched_summaries(Keys, Rest).
 
-solve_fixed_point(Clauses, Keys, Current, Iteration, Solved) :-
+% Solve result summaries in dependency order.  The former implementation
+% analyzed the complete closure on every round, so a call chain of depth D ran
+% every one of its N clauses roughly D times.  Direct-call SCCs are the only
+% places that need iteration: acyclic components are analyzed once, callee
+% first, while a recursive component iterates only its own clauses.
+solve_fixed_point(Clauses, Keys, Current, _, Solved) :-
+    solve_fixed_point_counted(Clauses, Keys, Current, Solved, _).
+
+solve_fixed_point_counted(Clauses, Keys, Current, Solved, AnalysisCount) :-
+    solver_component_order(Keys, Clauses, Components, Graph),
+    solve_components(Components, Graph, Clauses, Current, Solved,
+                     0, AnalysisCount).
+
+solver_component_order(Keys, Clauses, Components, Graph) :-
+    solver_call_graph(Keys, Clauses, Graph),
+    graph_sccs(Keys, Graph, SCCs),
+    order_sccs_callee_first(SCCs, Graph, Components).
+
+solver_call_graph(Keys, Clauses, Graph) :-
+    findall(Caller-Callee,
+            ( member(Clause, Clauses),
+              prepared_clause_key(Clause, Caller),
+              memberchk(Caller, Keys),
+              prepared_clause_call_key(Clause, Callee),
+              memberchk(Callee, Keys) ),
+            Edges0),
+    sort(Edges0, Edges),
+    vertices_edges_to_ugraph(Keys, Edges, Graph).
+
+graph_sccs(Keys, Graph, SCCs) :-
+    transpose_ugraph(Graph, Transposed),
+    graph_sccs_(Keys, Graph, Transposed, SCCs).
+
+graph_sccs_([], _, _, []).
+graph_sccs_([Key|Keys], Graph, Transposed, [SCC|SCCs]) :-
+    reachable(Key, Graph, Forward),
+    reachable(Key, Transposed, Backward),
+    ord_intersection(Forward, Backward, SCC),
+    ord_subtract(Keys, SCC, Remaining),
+    graph_sccs_(Remaining, Graph, Transposed, SCCs).
+
+order_sccs_callee_first(SCCs, Graph, Ordered) :-
+    maplist(wrap_scc, SCCs, Vertices),
+    findall(CallerComponent-CalleeComponent,
+            ( member(Caller-Neighbors, Graph),
+              member(Callee, Neighbors),
+              scc_for_key(SCCs, Caller, CallerSCC),
+              scc_for_key(SCCs, Callee, CalleeSCC),
+              CallerSCC \== CalleeSCC,
+              CallerComponent = scc(CallerSCC),
+              CalleeComponent = scc(CalleeSCC) ),
+            ComponentEdges0),
+    sort(ComponentEdges0, ComponentEdges),
+    vertices_edges_to_ugraph(Vertices, ComponentEdges, ComponentGraph),
+    top_sort(ComponentGraph, CallerFirst),
+    reverse(CallerFirst, CalleeFirst),
+    maplist(unwrap_scc, CalleeFirst, Ordered).
+
+wrap_scc(SCC, scc(SCC)).
+unwrap_scc(scc(SCC), SCC).
+
+scc_for_key([SCC|_], Key, SCC) :- memberchk(Key, SCC), !.
+scc_for_key([_|SCCs], Key, SCC) :- scc_for_key(SCCs, Key, SCC).
+
+solve_components([], _, _, Summaries, Summaries, Count, Count).
+solve_components([SCC|SCCs], Graph, Clauses, Current, Solved,
+                 Count0, Count) :-
+    include(prepared_for_keys(SCC), Clauses, ComponentClauses),
+    ( recursive_component(SCC, Graph)
+      -> solve_recursive_component(ComponentClauses, SCC, Current, Next,
+                                   32, Count0, Count1)
+    ; solve_component_once(ComponentClauses, SCC, Current, Next,
+                           Count0, Count1) ),
+    solve_components(SCCs, Graph, Clauses, Next, Solved, Count1, Count).
+
+recursive_component([_,_|_], _) :- !.
+recursive_component([Key], Graph) :-
+    neighbors(Key, Graph, Neighbors),
+    memberchk(Key, Neighbors).
+
+solve_component_once(Clauses, Keys, Current, Next, Count0, Count) :-
     analyze_clause_universe(Clauses, Current, Analyses),
     summarize_keys(Keys, Analyses, Derived),
     replace_key_summaries(Keys, Current, Derived, Next),
-    ( summaries_equivalent(Current, Next)
-      -> Solved = Next
-    ; Iteration >= 31
-      -> Solved = Next
-    ; NextIteration is Iteration + 1,
-      solve_fixed_point(Clauses, Keys, Next, NextIteration, Solved) ).
+    length(Clauses, ClauseCount),
+    Count is Count0 + ClauseCount.
+
+solve_recursive_component(Clauses, Keys, Current, Solved,
+                          Remaining, Count0, Count) :-
+    solve_component_once(Clauses, Keys, Current, Next, Count0, Count1),
+    ( summaries_for_keys_equivalent(Keys, Current, Next)
+      -> Solved = Next, Count = Count1
+    ; Remaining =< 1
+      -> Solved = Next, Count = Count1
+    ; More is Remaining - 1,
+      solve_recursive_component(Clauses, Keys, Next, Solved,
+                                More, Count1, Count) ).
+
+summaries_for_keys_equivalent(Keys, Left, Right) :-
+    include(summary_for_keys(Keys), Left, LeftSelected),
+    include(summary_for_keys(Keys), Right, RightSelected),
+    LeftSelected =@= RightSelected.
 
 analyze_clause_universe([], _, []).
 analyze_clause_universe([prepared_clause(F, N, Source, Lowered)|Clauses], Summaries,

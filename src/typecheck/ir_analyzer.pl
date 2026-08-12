@@ -620,7 +620,8 @@ refine_identical_success(A, B, State0, Flow) :-
     ; id_literal(State0, B, Value)
       -> literal_facts(Value, Facts),
          add_facts_flow(reachable(State0), A, Facts, Flow)
-    ; alias_ids(State0, A, B, State), consistent_flow(State, Flow) ).
+    ; alias_ids_without_types(State0, A, B, State),
+      consistent_flow(State, Flow) ).
 
 refine_disequality(A, B, State0, Flow) :-
     ( id_literal(State0, A, Value)
@@ -789,9 +790,8 @@ add_facts_flow(reachable(State0), Id, Facts, Flow) :-
     consistent_flow(State, Flow).
 
 add_state_facts([], _, State, State).
-add_state_facts([Fact|Facts], Id, State0, State) :-
-    state_add_fact(State0, Id, Fact, State1),
-    add_state_facts(Facts, Id, State1, State).
+add_state_facts(Facts, Id, State0, State) :-
+    state_add_facts(State0, Id, Facts, State).
 
 expand_facts(Facts, Expanded) :-
     expand_facts_(Facts, [], Expanded0),
@@ -917,6 +917,21 @@ all_ids_have(State, [Id|Ids], Fact) :-
 alias_ids(State0, A, B, State) :-
     alias_one_way(State0, A, B, State1),
     alias_one_way(State1, B, A, State).
+
+% Runtime identity does not erase nominal views of the same value.  A branded
+% Proof can be identical to the Atom from which it was branded, so propagating
+% type facts across == spuriously widens/narrows legacy types.  Unification
+% retains full aliasing; identity shares only value/shape facts.
+alias_ids_without_types(State0, A, B, State) :-
+    alias_one_way_without_types(State0, A, B, State1),
+    alias_one_way_without_types(State1, B, A, State).
+
+alias_one_way_without_types(State0, From, To, State) :-
+    state_facts(State0, From, Facts0),
+    exclude(type_fact, Facts0, Facts),
+    add_state_facts(Facts, To, State0, State).
+
+type_fact(type(_)).
 
 alias_one_way(State0, From, To, State) :-
     state_facts(State0, From, Facts),
@@ -1128,6 +1143,22 @@ test(unify_true_edge_propagates_constructor_field_type) :-
     once(( member(edge(_, true, TrueState), Trace),
            state_fact_matches(TrueState, StatementId, type('Statement')) )),
     var(Annotated), var(Proof), var(TV).
+
+test(identity_true_edge_does_not_copy_nominal_type) :-
+    Source = [if, [==, Left, Right], true, false],
+    lower_expr(Source, IR, _, Env),
+    env_var_id(Env, Left, LeftId),
+    env_var_id(Env, Right, RightId),
+    state_empty(S0),
+    state_add_fact(S0, LeftId, type('Proof'), S1),
+    state_add_fact(S1, RightId, type('Atom'), S2),
+    analyze_ir(IR, S2, Analysis),
+    analysis_trace(Analysis, Trace),
+    once(member(edge(_, true, TrueState), Trace)),
+    state_has_fact(TrueState, LeftId, type('Proof')),
+    \+ state_has_fact(TrueState, LeftId, type('Atom')),
+    state_has_fact(TrueState, RightId, type('Atom')),
+    \+ state_has_fact(TrueState, RightId, type('Proof')).
 
 test(is_member_literal_atom_mode_is_det) :-
     Source = ['is-member', X, [alpha, beta, gamma]],

@@ -75,9 +75,10 @@ process_metta_string(S, Results, Space, Mode) :- metta_string_forms(S, Forms),
                                            maplist(parse_form, Forms, ParsedForms),
                                            %declaration prepass: every function type declaration in the
                                            %file is visible to every definition in it, independent of order
-                                           forall(member(parsed(expression, FormStr, Line, Decl), ParsedForms),
-                                                  with_form_location(Line, FormStr,
-                                                                     precache_fn_type_decl(Space, Decl))),
+                                           with_decl_notifications_batched(
+                                               forall(member(parsed(expression, FormStr, Line, Decl), ParsedForms),
+                                                      with_form_location(Line, FormStr,
+                                                                         precache_fn_type_decl(Space, Decl)))),
                                            %clause-BODY prepass, same rationale: the output-certificate
                                            %prover (output_cert/3) may need a later definition's bodies
                                            %while an earlier one is validated - mutually recursive
@@ -87,8 +88,8 @@ process_metta_string(S, Results, Space, Mode) :- metta_string_forms(S, Forms),
                                            current_metta_file(File),
                                            setup_call_cleanup(
                                                precache_pending_bodies(File, ParsedForms),
-                                               with_unified_file_analysis(
-                                                   ParsedForms,
+                                               with_unified_file_analysis_for_mode(
+                                                   Mode, ParsedForms,
                                                    ( %exhaustiveness is a property of the whole clause set, so it
                                                      %is judged here, once the file's clauses and declarations are
                                                      %all visible, and before any of its forms runs:
@@ -96,6 +97,14 @@ process_metta_string(S, Results, Space, Mode) :- metta_string_forms(S, Forms),
                                                      maplist(process_form(Space, Mode), ParsedForms, ResultsList) )),
                                                retractall(pending_clause_body(File, _, _, _))), !,
                                            append(ResultsList, Results).
+
+% Re-importing a source into another MeTTa space only replays its atoms.  Its
+% functions remain the already-compiled clauses from the first load, so a
+% second whole-file IR solve has no consumer and cannot affect code generation.
+with_unified_file_analysis_for_mode(compile_functions, ParsedForms, Goal) :- !,
+    with_unified_file_analysis(ParsedForms, Goal).
+with_unified_file_analysis_for_mode(_, _, Goal) :-
+    call(Goal).
 
 register_function_signature(F, Arity) :- warn_if_used_as_symbol(F),
                                          register_fun(F),
