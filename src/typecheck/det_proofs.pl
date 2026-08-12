@@ -723,6 +723,11 @@ output_bodies_verdict(Kind, [B|Bs], Stack, Verdict, Dependencies) :-
     append(HereDeps, RestDeps, Dependencies).
 
 proper_list_output(F, N) :- output_cert(proper_list, F, N).
+%Compatibility projection from the unified function summary.  During a file
+%batch this is the same IR analysis used for branch translation and body
+%cardinality; the legacy certificate remains only for callers not yet routed
+%through that batch boundary.
+bool_output(F, N) :- unified_function_result_fact(F, N, proper_bool), !.
 bool_output(F, N) :- output_cert(bound_bool, F, N).
 
 %Internal symbol teardown uses this narrow cache operation. Ordinary clause

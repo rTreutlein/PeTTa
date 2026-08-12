@@ -106,6 +106,7 @@ notify_mutation(Event) :-
 
 notify_mutation_queue([], State, State).
 notify_mutation_queue([Event|Events], State0, State) :-
+    unified_checker_invalidate_event(Event),
     analysis_cache_invalidate_event(Event),
     affected_compiled_functions(Event, Functions),
     recompile_affected_functions(Functions, Event, State0, State1, MoreEvents),

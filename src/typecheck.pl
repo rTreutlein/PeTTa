@@ -1,4 +1,4 @@
-%%%%%%%%%% Compile-time typechecking support (see AGENTS.md) %%%%%%%%%%
+%%%%%%%%%% Compile-time typechecking support %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
 % The checker is organized as separately loaded ownership units. Predicate
 % definitions are never interleaved across files; each persistent store has an
@@ -7,8 +7,14 @@
 % the non-module units in a different order and rejects predicates defined in
 % more than one unit.
 %
-% Real module:
-%   builtin_registry.pl  declarative builtin metadata and consistency checks
+% Unified checker modules (see typecheck/UNIFIED_CHECKER.md):
+%   abstract_domain.pl   value facts and cardinality intervals
+%   call_summaries.pl    declarative builtin modes and postconditions
+%   relational_ir.pl     single lowering of source control/evaluation forms
+%   ir_analyzer.pl       flow-sensitive interpretation of relational IR
+%
+% Legacy compatibility module:
+%   builtin_registry.pl  existing public builtin metadata views
 %
 % Documented non-module boundaries (kept in `user` while translator/metta
 % still consume their interfaces directly):
@@ -26,6 +32,11 @@
 %   det_validate.pl      committed-arrow validation and bound provisos
 %   dependency_graph.pl  compiled dependencies and mutation invalidation
 
+:- use_module('typecheck/abstract_domain.pl').
+:- use_module('typecheck/call_summaries.pl').
+:- use_module('typecheck/relational_ir.pl').
+:- use_module('typecheck/ir_analyzer.pl').
+:- use_module('typecheck/unified_checker_bridge.pl').
 :- use_module('typecheck/builtin_registry.pl').
 
 :- ensure_loaded([

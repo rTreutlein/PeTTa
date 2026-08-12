@@ -886,6 +886,8 @@ affected_decl_functions(Names, Fs) :-
     append(ByType, BySource, Fs0), sort(Fs0, Fs).
 
 forget_symbol_types(Name) :- remove_all_fn_decl_records(Name),
+                             unified_checker_invalidate_event(
+                                 broad_mutation(forget_symbol_types(Name))),
                              retractall(nonfn_decl_origin(Name, _)),
                              retractall(declared_value_type(Name, _)),
                              retractall(declared_newtype(Name, _)),

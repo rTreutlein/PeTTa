@@ -87,11 +87,13 @@ process_metta_string(S, Results, Space, Mode) :- metta_string_forms(S, Forms),
                                            current_metta_file(File),
                                            setup_call_cleanup(
                                                precache_pending_bodies(File, ParsedForms),
-                                               ( %exhaustiveness is a property of the whole clause set, so it
-                                                 %is judged here, once the file's clauses and declarations are
-                                                 %all visible, and before any of its forms runs:
-                                                 det_exhaustiveness_prepass(ParsedForms),
-                                                 maplist(process_form(Space, Mode), ParsedForms, ResultsList) ),
+                                               with_unified_file_analysis(
+                                                   ParsedForms,
+                                                   ( %exhaustiveness is a property of the whole clause set, so it
+                                                     %is judged here, once the file's clauses and declarations are
+                                                     %all visible, and before any of its forms runs:
+                                                     det_exhaustiveness_prepass(ParsedForms),
+                                                     maplist(process_form(Space, Mode), ParsedForms, ResultsList) )),
                                                retractall(pending_clause_body(File, _, _, _))), !,
                                            append(ResultsList, Results).
 
@@ -140,7 +142,8 @@ static_error_ctx(determinism).
 process_form(Space, _, parsed(expression, FormStr, Line, Term), []) :-
                                                            with_form_location(
                                                                Line, FormStr,
-                                                               'add-atom'(Space, Term, true)),
+                                                               with_unified_preanalyzed_form(
+                                                                   'add-atom'(Space, Term, true))),
                                                            ( silent(true) -> true ; swrite(Term,STerm),
                                                                                     format("\e[33m--> metta sexpr -->~n\e[36m~w~n", [STerm]),
                                                                                     format("\e[33m^^^^^^^^^^^^^^^^^^^~n\e[0m") ).

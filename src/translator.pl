@@ -49,11 +49,13 @@ translate_clause(Input, Clause, ConstrainArgs, Dependencies) :-
         atom(F),
         length(Args, N),
         copy_term_nat(BodyExpr, SourceBody),
-        analysis_collect(
-            with_compiling_caller(
-                F, N,
-                translate_clause_core(Input, Clause, ConstrainArgs)),
-            Events),
+        with_unified_clause_analysis(
+            Input,
+            analysis_collect(
+                with_compiling_caller(
+                    F, N,
+                    translate_clause_core(Input, Clause, ConstrainArgs)),
+                Events)),
         analysis_term_dependencies(SourceBody, TermDependencies),
         analysis_function_decl_dependencies(F, DeclDependencies),
         append([[decl(F/N), clause_set(F/N)],
@@ -811,16 +813,28 @@ translate_expr([H0|T0], Expectation, Goals, Out) :-
         %--- Conditionals ---:
         ; special_builtin_form(HV, T, if_then), T = [Cond, Then]
           -> translate_if_cond(Cond, ConC, CondGoal),
-                                        translate_expr_to_conj(Then, Expectation, ConT, Tv),
-                                        build_branch(ConT, Tv, Out, BT),
+                                        with_unified_edge_facts(
+                                            Cond, true,
+                                            ( translate_expr_to_conj(
+                                                  Then, Expectation, ConT, Tv),
+                                              build_isolated_branch(
+                                                  ConT, Tv, Out, BT) )),
                                         ( ConC == true -> append(GsH, [ ( CondGoal -> BT ) ], Goals)
                                                         ; append(GsH, [ ( ConC, ( CondGoal -> BT ) ) ], Goals) )
         ; special_builtin_form(HV, T, if_then_else), T = [Cond, Then, Else]
           -> translate_if_cond(Cond, ConC, CondGoal),
-                                              translate_expr_to_conj(Then, Expectation, ConT, Tv),
-                                              translate_expr_to_conj(Else, Expectation, ConE, Ev),
-                                              build_branch(ConT, Tv, Out, BT),
-                                              build_branch(ConE, Ev, Out, BE),
+                                              with_unified_edge_facts(
+                                                  Cond, true,
+                                                  ( translate_expr_to_conj(
+                                                        Then, Expectation, ConT, Tv),
+                                                    build_isolated_branch(
+                                                        ConT, Tv, Out, BT) )),
+                                              with_unified_edge_facts(
+                                                  Cond, false,
+                                                  ( translate_expr_to_conj(
+                                                        Else, Expectation, ConE, Ev),
+                                                    build_isolated_branch(
+                                                        ConE, Ev, Out, BE) )),
                                               ( ConC == true -> append(GsH, [ (CondGoal -> BT ; BE) ], Goals)
                                                               ; append(GsH, [ (ConC, (CondGoal -> BT ; BE)) ], Goals) )
         %A case whose arguments do not fit (case Key ((Pattern Value) ...))
@@ -849,18 +863,28 @@ translate_expr([H0|T0], Expectation, Goals, Out) :-
         %--- Short-circuit boolean operators ---:
         ; special_builtin_form(HV, T, and_then), T = [A, B]
           -> translate_expr_to_conj(A, ConjA, Av),
-                                           translate_expr_to_conj(B, ConjB, Bv),
+                                           with_unified_edge_facts(
+                                               A, true,
+                                               ( translate_expr_to_conj(B, ConjB, Bv),
+                                                 check_call_arg(
+                                                     declared, 'and-then', Bv,
+                                                     'Bool', GsB),
+                                                 goals_list_to_conj(GsB, GB) )),
                                            check_call_arg(declared, 'and-then', Av, 'Bool', GsA),
-                                           check_call_arg(declared, 'and-then', Bv, 'Bool', GsB),
-                                           goals_list_to_conj(GsA, GA), goals_list_to_conj(GsB, GB),
+                                           goals_list_to_conj(GsA, GA),
                                            set_out_type(Out, 'Bool'),
                                            append(GsH, [(ConjA, GA, (Av == true -> (ConjB, GB, Out = Bv) ; Out = false))], Goals)
         ; special_builtin_form(HV, T, or_else), T = [A, B]
           -> translate_expr_to_conj(A, ConjA, Av),
-                                          translate_expr_to_conj(B, ConjB, Bv),
+                                          with_unified_edge_facts(
+                                              A, false,
+                                              ( translate_expr_to_conj(B, ConjB, Bv),
+                                                check_call_arg(
+                                                    declared, 'or-else', Bv,
+                                                    'Bool', GsB),
+                                                goals_list_to_conj(GsB, GB) )),
                                           check_call_arg(declared, 'or-else', Av, 'Bool', GsA),
-                                          check_call_arg(declared, 'or-else', Bv, 'Bool', GsB),
-                                          goals_list_to_conj(GsA, GA), goals_list_to_conj(GsB, GB),
+                                          goals_list_to_conj(GsA, GA),
                                           set_out_type(Out, 'Bool'),
                                           append(GsH, [(ConjA, GA, (Av == true -> Out = true ; (ConjB, GB, Out = Bv)))], Goals)
         %--- Unification constructs ---:
@@ -947,10 +971,19 @@ translate_expr([H0|T0], Expectation, Goals, Out) :-
                                            append(FreeVars, Args, FullArgs),
                                            % compile clause with all bound + free vars
                                            LambdaSource = [=, [F|FullArgs], Body],
-                                           translate_clause(LambdaSource, Clause, true, LambdaDependencies),
+                                           % A lambda body is deferred code.  Compile an attributed copy so
+                                           % its local type inference can use the captured variables' current
+                                           % facts without publishing facts produced inside the body back into
+                                           % the enclosing expression before the closure is invoked.
+                                           copy_term(LambdaSource, IsolatedLambdaSource),
+                                           with_unified_ad_hoc_clause_analysis(
+                                               IsolatedLambdaSource,
+                                               translate_clause(
+                                                   IsolatedLambdaSource, Clause,
+                                                   true, LambdaDependencies)),
                                            register_fun(F),
                                            assertz(Clause, LambdaRef),
-                                           assertz(translated_from(LambdaRef, LambdaSource)),
+                                           assertz(translated_from(LambdaRef, IsolatedLambdaSource)),
                                            length(FullArgs, N),
                                            record_compiled_dependencies(LambdaRef, F/N, LambdaDependencies),
                                            format(atom(Label), "metta lambda (~w)", [F]),
@@ -1527,6 +1560,32 @@ build_branch(Con, Val, Out, Goal) :- var(Val) -> ( known_candidates(Val, _) -> t
                                                  Goal = Con
                                                ; note_candidates(Out, Val),
                                                  Goal = (Val = Out, Con).
+
+% Edge-scoped translation restores every source variable after compiling one
+% arm.  Do not alias a variable-valued arm onto the shared result at compile
+% time: that would make restoring the source variable erase the joined result's
+% type.  Transfer its candidates now and keep the value equality in the emitted
+% branch goal instead.
+build_isolated_branch(Con, Val, Out, Goal) :-
+    ( var(Val), current_unified_source_variable(Val)
+      -> join_isolated_branch_candidates(Out, Val),
+         ( Con == true -> Goal = (Out = Val)
+         ; Goal = (Con, Out = Val) )
+    ; build_branch(Con, Val, Out, Goal) ).
+
+% `note_candidates/2` is a binding-flow operation: when Out currently has one
+% open candidate it specializes that candidate to the incoming type.  An if
+% join is a choice-flow operation instead.  Route the incoming candidates
+% through a fresh attributed carrier so tknown's ordinary unification hook
+% takes their variant union, exactly as build_branch/4 did when it could alias
+% the branch value directly, without aliasing the edge-scoped source variable.
+join_isolated_branch_candidates(Out, Val) :-
+    ( var(Out)
+      -> ( var(Val), known_candidates(Val, Candidates)
+           -> put_attr(Carrier, tknown, Candidates)
+         ; note_candidates(Carrier, Val) ),
+         Carrier = Out
+    ; true ).
 
 %Translate case expression recursively into nested if. The branches are
 %compiled to a nested if-then-else, so case is first-match/COMMITTED: a value

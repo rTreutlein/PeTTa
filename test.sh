@@ -161,6 +161,17 @@ fi
 
 if [ $status -eq 0 ]; then
     echo ""
+    echo "Running examples/unified_checker_matrix.sh"
+    if sh examples/unified_checker_matrix.sh; then
+        echo "OK: unified_checker_matrix.sh"
+    else
+        echo "FAILURE in unified_checker_matrix.sh"
+        status=1
+    fi
+fi
+
+if [ $status -eq 0 ]; then
+    echo ""
     echo "Running examples/fuzz_matrix.sh"
     if sh examples/fuzz_matrix.sh; then
         echo "OK: fuzz_matrix.sh"
