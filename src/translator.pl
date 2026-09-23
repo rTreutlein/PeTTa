@@ -577,6 +577,18 @@ check_typed_space_value(Space, Value) :-
          ; true )
     ; true ).
 
+%A row the compiler proves against the declared schema - by the criterion that
+%discharges a declared argument's residual guard - needs no runtime re-check,
+%which would walk the whole row on every update:
+typed_space_update_goal(HV, Space, Value, Update) :-
+    ( atom(Space), declared_space_type(Space, RowT),
+      arg_statically_ok(Value, RowT)
+      -> proven_space_update(HV, Update)
+    ; Update = HV ).
+
+proven_space_update('add-atom', 'add-atom-proven').
+proven_space_update('remove-atom', 'remove-atom-proven').
+
 bind_typed_space_pattern(Space, Pattern) :-
     ( note_source_space_consultation(Space) -> true ; true ),
     ( atom(Space), declared_space_type(Space, RowT)
@@ -997,7 +1009,8 @@ translate_expr([H0|T0], Expectation, Goals, Out) :-
         ; special_builtin_form(HV, T, typed_space_update), T = [Space, Atom] ->
                                                                    check_typed_space_value(Space, Atom),
                                                                    translate_expr(Space, G1, S),
-                                                                   Goal =.. [HV,S,Atom,Out],
+                                                                   typed_space_update_goal(HV, Space, Atom, Update),
+                                                                   Goal =.. [Update,S,Atom,Out],
                                                                    set_out_type(Out, 'Bool'),
                                                                    append([GsH,G1,[Goal]], Goals)
         ; special_builtin_form(HV, T, typed_space_match),
