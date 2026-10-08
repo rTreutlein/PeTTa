@@ -363,7 +363,7 @@ translate_expr([H0|T0], Goals, Out) :-
 build_call_or_partial(Fun, AVs, Out, Inner, Extra, Goals) :- length(AVs, N),
                                                              Arity is N + 1,
                                                              ( maybe_specialize_call(Fun, AVs, Out, Goal)
-                                                               -> append(Inner, [Goal|Extra], Goals)
+                                                               -> append(Inner, [catch(call(Goal), _, fail)|Extra], Goals)
                                                                 ; arity(Fun, Arity)
                                                                   -> resolve_memoization(Fun, AVs, Out, Goal),
                                                                      append(Inner, [Goal|Extra], Goals)
