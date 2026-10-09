@@ -14,7 +14,6 @@
             validate_builtin_registry_schema/0,
             validate_builtin_registry_unique/0,
             validate_builtin_registry_hooks/0,
-            validate_builtin_registry_signatures/0,
             validate_builtin_registration_coverage/0,
             validate_builtin_implementation_coverage/0
           ]).
@@ -134,6 +133,10 @@ builtin_spec('is-space'/1, implementation(metta), typing(signature(unspecified, 
 
 % Lists and tuples. `contextual` means the output type is supplied by the
 % named procedural rule in clause_checks.pl instead of a global declaration.
+% A signature would be consulted before that rule and replace what the
+% argument knows: (cdr-atom $xs) on a (List Choice) would come back as
+% (List %Undefined%), and a global (List $item) for append would reject legal
+% heterogeneous lists. The rules keep element types and reject nothing.
 builtin_spec(cons/2, implementation(metta), typing(contextual(cons_list)), evaluation(eager), cardinality(fixed(det)), lowering(generic)).
 builtin_spec('cons-atom'/2, implementation(metta), typing(contextual(cons_list)), evaluation(eager), cardinality(fixed(det)), lowering(generic)).
 builtin_spec('decons-atom'/1, implementation(metta), typing(untyped), evaluation(eager), cardinality(fixed(semidet)), lowering(generic)).
@@ -194,6 +197,9 @@ builtin_spec(callPredicate/1, implementation(metta), typing(untyped), evaluation
 builtin_spec(assertaPredicate/1, implementation(metta), typing(untyped), evaluation(eager), cardinality(fixed(det)), lowering(generic)).
 builtin_spec(assertzPredicate/1, implementation(metta), typing(untyped), evaluation(eager), cardinality(fixed(det)), lowering(generic)).
 builtin_spec(retractPredicate/1, implementation(metta), typing(untyped), evaluation(eager), cardinality(fixed(det)), lowering(generic)).
+% Trusted foreign promises: determinism arrows for Prolog predicates called
+% through (callPredicate (Predicate (g ...))). No MeTTa clauses exist for these
+% symbols, so the arrows are believed, not validated.
 builtin_spec(assertz/2, implementation(foreign_promise), typing(signature(det, [_A,_B], 'Bool')), evaluation(eager), cardinality(unspecified), lowering(generic)).
 builtin_spec(erase/1, implementation(foreign_promise), typing(signature(det, [_], 'Bool')), evaluation(eager), cardinality(unspecified), lowering(generic)).
 builtin_spec(heap_size/1, implementation(external), typing(signature(unspecified, [_], 'Number')), evaluation(eager), cardinality(unspecified), lowering(generic)).
@@ -341,7 +347,6 @@ validate_builtin_registry :-
     validate_builtin_registry_schema,
     validate_builtin_registry_unique,
     validate_builtin_registry_hooks,
-    validate_builtin_registry_signatures,
     validate_builtin_registration_coverage,
     validate_builtin_implementation_coverage.
 
@@ -400,20 +405,6 @@ validate_builtin_registry_hooks :-
            ( user:builtin_codegen_rule_defined(Hook)
              -> true
              ; throw(error(undefined_builtin_codegen_rule(Hook), builtin_registry)) )).
-
-validate_builtin_registry_signatures :-
-    forall(builtin_signature(F, _, Det, Args, Out),
-           ( user:declared_fn_type(F, A2, O2, D2),
-             (Args-Out-Det) =@= (A2-O2-D2)
-             -> true
-             ; throw(error(registry_signature_missing_from_builtin_types(F, Args, Out, Det),
-                           builtin_registry)) )),
-    forall(user:declared_fn_type(F, Args, Out, Det),
-           ( builtin_signature(F, _, D2, A2, O2),
-             (Args-Out-Det) =@= (A2-O2-D2)
-             -> true
-             ; throw(error(builtin_types_signature_missing_from_registry(F, Args, Out, Det),
-                           builtin_registry)) )).
 
 validate_builtin_registration_coverage :-
     forall(user:fun(F),

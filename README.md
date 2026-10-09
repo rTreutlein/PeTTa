@@ -437,7 +437,7 @@ MeTTa clauses** — a Prolog predicate — is a *trusted promise* about code the
 analysis cannot read, the same standing `-[nondet]->` on a reflective wrapper
 has. `callPredicate` stays nondet by default, but with a manifest goal —
 `(callPredicate (Predicate (g A1 .. An)))` — it reads `g`'s declared arrow at
-that arity: `lib_builtin_types` ships `(: assertz (-[det]-> $c $r Bool))` and
+that arity: the builtin registry declares `(: assertz (-[det]-> $c $r Bool))` and
 `(: erase (-[det]-> $r Bool))`, and user code declares further predicates the
 same way (`examples/strictdet_callpredicate_declared.metta`; an undeclared
 goal keeps the honest nondet,
@@ -464,8 +464,9 @@ require a proper list input. A direct committed parameter earns that proof
 through a proper-list boundary proviso; an open or partial list is rejected
 before the traversal can enumerate list shapes.
 
-**The table outranks a declaration.** `lib_builtin_types.metta` gives many
-builtins a type, while `builtin_registry.pl` supplies their authoritative effect.
+**The table outranks a declaration.** `builtin_registry.pl` gives many
+builtins a type (importing `lib_builtin_types` adds these signatures to the
+space as `(: name type)` atoms) and supplies their authoritative effect.
 A declared builtin therefore takes its arrow head from the table both as a
 value and at a direct call; a type signature cannot certify a nondeterministic
 builtin as deterministic in closure position. See

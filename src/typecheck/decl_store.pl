@@ -443,10 +443,10 @@ forbidden_effect_parameter_occurrence(T) :-
     ; effect_var_occurrence(T, _) ).
 
 %Under --strict-det every arrow in a function declaration, including nested
-%and alias-expanded ones, must name its cardinality. The builtin signature
-%file is exempt: builtin determinism comes from builtin_registry.pl.
+%and alias-expanded ones, must name its cardinality. Builtin signatures are
+%exempt: builtin determinism comes from the registry's cardinality column.
 require_explicit_det_arrows(Name, Type) :-
-    ( strict_det(true), \+ builtin_signature_load,
+    ( strict_det(true), \+ nb_current('$builtin_signatures', true),
       normalize_type(Type, Normalized),
       type_contains_plain_arrow(Normalized)
       -> throw(error(strict_det_plain_arrow(Name), determinism))
@@ -456,13 +456,6 @@ type_contains_plain_arrow(T) :-
     nonvar(T), is_list(T),
     ( T = [H|_], H == (->)
     ; member(E, T), type_contains_plain_arrow(E) ), !.
-
-builtin_signature_load :- nb_current('$seeding_builtin_types', true), !.
-builtin_signature_load :-
-    current_metta_file(File),
-    standard_library_path(Base),
-    atomic_list_concat([Base, '/lib_builtin_types.metta'], BuiltinFile),
-    catch(same_file(File, BuiltinFile), _, fail).
 
 %Arrow declarations are pre-cached before source-ordered aliases exist; when
 %the declaration is processed in place and an alias expanded, remove the stale
@@ -551,21 +544,23 @@ precache_fn_type_decl(Space, Term) :- ( is_list(Term), Term = [C, Name, Type],
                                         -> maybe_cache_type_decl(Space, Term)
                                          ; true ).
 
-%Seed the store with the builtin operator types (called once after loading):
-seed_builtin_types :- standard_library_path(Base),
-                      atomic_list_concat([Base, '/lib_builtin_types.metta'], Path),
-                      read_file_to_string(Path, S, []),
-                      metta_string_forms(S, Forms),
-                      setup_call_cleanup(
-                          nb_setval('$seeding_builtin_types', true),
-                          in_metta_file(
-                              Path,
-                              forall(member(form(FormStr, Line), Forms),
-                                     with_form_location(
-                                         Line, FormStr,
-                                         ( sread(FormStr, Term),
-                                           maybe_cache_type_decl('&self', Term) )))),
-                          nb_delete('$seeding_builtin_types')).
+%%% Builtin signatures are the typing column of builtin_spec/6. They seed the
+%%% store once after loading, and lib_builtin_types adds them to a space as
+%%% (: Name Type) atoms for get-type and match.
+builtin_type_declaration([:, F, [Arrow|Types]]) :-
+    builtin_signature(F, _, Det, ArgTypes, OutType),
+    once(arrow_det(Arrow, Det)),
+    append(ArgTypes, [OutType], Types).
+
+with_builtin_signatures(Goal) :-
+    setup_call_cleanup(nb_setval('$builtin_signatures', true),
+                       forall(builtin_type_declaration(Decl), call(Goal, Decl)),
+                       nb_delete('$builtin_signatures')).
+
+seed_builtin_types :- with_builtin_signatures(maybe_cache_type_decl('&self')).
+
+add_builtin_signatures(Space, true) :-
+    with_builtin_signatures([Decl]>>'add-atom'(Space, Decl, true)).
 
 maybe_uncache_type_decl(Space, Term) :-
     ( Space == '&self', is_list(Term), Term = [C, Name, Type],
