@@ -480,9 +480,11 @@ builtin_argument_rule_verdict(manifest_indexed_list, _, [A, I], semidet) :-
 %retractall are det, and the function-equation first clause (guarded by cut on
 %[=,_,_]) is equally det - so exactly one clause commits: the call is det.
 %A DECLARED type never qualifies (see manifest_proper_list's note); only a
-%literal spine built at the call site does.
+%literal spine built at the call site does. The payload is passed raw - the
+%typed_space_update lowering never evaluates it - so a literal expression is
+%such a spine whatever its head: a variable head is stored, not applied.
 builtin_argument_rule_verdict(space_update, _, [_, T], det) :-
-    manifest_nonempty_list(T).
+    ( is_list(T), T = [_|_] -> true ; manifest_nonempty_list(T) ).
 %--- callPredicate: argument-sensitive via DECLARED foreign promises.
 %callPredicate calls an arbitrary Prolog goal and stays nondet by default.
 %But when the goal is built in place - (callPredicate (Predicate (g A1..An)))
@@ -1187,27 +1189,36 @@ closure_builtin_determinism(Name, List, F, M, DataArgs, Result) :-
 deterministic_call_expr(Expr, Result) :-
     Expr = [Fun|Args], atom(Fun), !,
     length(Args, N),
+    evaluated_call_args(Fun, Args, EArgs),
     ( unified_builtin_call_card(Expr, card(1,1))
       -> % The analyzer proved the builtin mode at this flow-sensitive call
          % site.  Retain the legacy argument walk: it supplies detailed
          % diagnostics and prevents a declared user-call contract nested in
          % an argument from becoming a circular determinism proof.
-         combine_determinism_list(Args, Result)
+         combine_determinism_list(EArgs, Result)
     ; call_site_determinism(Fun, N, Args, Det),
       ( Det == nondet -> Result = nondeterministic(call(Fun))
       ; Det == semidet, semidet_site_upgraded_to_det(Fun, N, Args)
-        -> combine_determinism_list(Args, Result)
+        -> combine_determinism_list(EArgs, Result)
       ; Det == semidet
-        -> combine_determinism_list(Args, R0),
+        -> combine_determinism_list(EArgs, R0),
            combine_det_results(may_fail(call(Fun)), R0, Result)
-      ; Det == det -> combine_determinism_list(Args, Result)
+      ; Det == det -> combine_determinism_list(EArgs, Result)
       ; det_closure_args_ok(Fun, N, Args),
         body_determinism_assuming(Fun, N, det)
-        -> combine_determinism_list(Args, Result)
+        -> combine_determinism_list(EArgs, Result)
       ; underapplied_closure(Fun, N)
-        -> combine_determinism_list(Args, Result)
+        -> combine_determinism_list(EArgs, Result)
       ; Result = unknown(undetermined_call(Fun)) ) ).
 deterministic_call_expr(Expr, unknown(dynamic_call(Expr))).
+
+%The arguments a call evaluates. add-atom and remove-atom store their payload
+%raw (their typed_space_update lowering never reduces it, on typed and untyped
+%spaces alike), so the payload is data whatever its head and contributes no
+%determinism of its own.
+evaluated_call_args(Fun, [Space, _Payload], [Space]) :-
+    special_builtin_form(Fun, [Space, _], typed_space_update), !.
+evaluated_call_args(_, Args, Args).
 
 %Structural equality/unification builtins whose operands are DATA PATTERNS.
 %These take their arguments unevaluated-as-data (a var head is unified, not
