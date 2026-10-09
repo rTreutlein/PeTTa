@@ -50,15 +50,10 @@ translate_clause(Input, Clause, ConstrainArgs, Dependencies) :-
         analysis_reemit_proof(Proof).
 
 with_compiling_caller(F, N, Goal) :-
-    ( catch(b_getval('$compiling_caller', Previous), _, fail)
-      -> HadPrevious = true
-    ; Previous = none, HadPrevious = false ),
-    setup_call_cleanup(
-        b_setval('$compiling_caller', F/N),
-        Goal,
-        ( HadPrevious == true
-          -> b_setval('$compiling_caller', Previous)
-        ; b_setval('$compiling_caller', none) )).
+    ( catch(b_getval('$compiling_caller', Previous), _, fail) -> true ; Previous = none ),
+    setup_call_cleanup(b_setval('$compiling_caller', F/N),
+                       Goal,
+                       b_setval('$compiling_caller', Previous)).
 
 current_compiling_caller(F, N) :-
     catch(b_getval('$compiling_caller', F/N), _, fail).
@@ -180,8 +175,6 @@ function_has_conditional_commit(F, N) :-
     length(Args, N),
     body_conditionally_commits(Body), !.
 
-length_of_source_args([=, [_|Args], _], N) :- length(Args, N).
-
 %%% Recompile one graph node. Clauses are redone together and in source order,
 %%% since overlap validation compares each clause with its predecessors.
 %%% Translation and validation are staged while the old clauses stay live, and
@@ -242,8 +235,8 @@ assert_staged_clauses([]).
 assert_staged_clauses([staged(_, Term, OriginFile, Clause, Dependencies)|Ss]) :-
     assertz(Clause, NewRef),
     assertz(translated_from(NewRef, Term)),
-    Term = [=, [G|_], _],
-    length_of_source_args(Term, N),
+    Term = [=, [G|SourceArgs], _],
+    length(SourceArgs, N),
     record_compiled_dependencies(NewRef, G/N, OriginFile, Dependencies),
     assert_staged_clauses(Ss).
 
@@ -389,11 +382,11 @@ translate_expected_list_elements([], _, [], []).
 translate_expected_list_elements([E|Es], ET, Goals, [V|Vs]) :-
         ( expression_typed(ET)
           -> expression_arg_value(E, V), G1 = []
-        ; translate_expected_list_element(E, ET, 'make-list', G1, V) ),
+        ; translate_expected_element(E, ET, 'make-list', G1, V) ),
         translate_expected_list_elements(Es, ET, G2, Vs),
         append(G1, G2, Goals).
 
-translate_expected_list_element(E, T, Context, Goals, V) :-
+translate_expected_element(E, T, Context, Goals, V) :-
         ( contextual_expected_type(T)
           -> translate_expr(E, expected(T), G0, V)
            ; translate_expr(E, none, G0, V) ),
@@ -402,13 +395,7 @@ translate_expected_list_element(E, T, Context, Goals, V) :-
 
 translate_expected_fields([], [], [], []).
 translate_expected_fields([E|Es], [T|Ts], Goals, [V|Vs]) :-
-        ( contextual_expected_type(T)
-          -> translate_expr(E, expected(T), G0, V),
-             check_call_arg(declared, data, V, T, Checks),
-             append(G0, Checks, G1)
-           ; translate_expr(E, none, G0, V),
-             check_call_arg(declared, data, V, T, Checks),
-             append(G0, Checks, G1) ),
+        translate_expected_element(E, T, data, G1, V),
         translate_expected_fields(Es, Ts, G2, Vs),
         append(G1, G2, Goals).
 
@@ -433,7 +420,7 @@ rewrite_streamops([If, [Eq, V, Pattern], Then, Else],
     known_singleton(V, KnownT),
     equality_case_shape(KnownT, Pattern),
     literal_case_unification_pattern(Pattern), !,
-    substitute_source_var(Else, V, Fallthrough, NarrowElse).
+    substitute_source_var(V, Fallthrough, Else, NarrowElse).
 %Only the one-argument standard-library resolver is curated. Two-argument
 %library paths can come from git-import!, and ordinary file imports remain
 %user-origin.
@@ -476,17 +463,14 @@ literal_case_unification_pattern(Pattern) :-
 %Identity-preserving substitution for the equality-if fallthrough. The fresh
 %case binder denotes the same runtime value as V, but unlike V it can carry
 %the case branch's reduced union without retaining V's whole-union attribute.
-substitute_source_var(Term, Old, New, Out) :-
+substitute_source_var(Old, New, Term, Out) :-
     ( var(Term)
       -> ( Term == Old -> Out = New ; Out = Term )
     ; atomic(Term)
       -> Out = Term
     ; compound_name_arguments(Term, F, Args),
-      maplist(substitute_source_var_(Old, New), Args, OutArgs),
+      maplist(substitute_source_var(Old, New), Args, OutArgs),
       compound_name_arguments(Out, F, OutArgs) ).
-
-substitute_source_var_(Old, New, Term, Out) :-
-    substitute_source_var(Term, Old, New, Out).
 
 %Only literal, declared source-space names opt in. Raw space payloads and
 %patterns are never evaluated here: reject a definite contradiction, trust
@@ -496,12 +480,8 @@ note_source_space_consultation(Space) :-
     analysis_emit(dependency(declaration(space, Space))).
 
 check_typed_space_value(Space, Value) :-
-    ( note_source_space_consultation(Space) -> true ; true ),
-    ( atom(Space), declared_space_type(Space, RowT)
-      -> ( value_definitely_mismatch(Value, RowT)
-           -> throw(error(literal_type_mismatch(Value, RowT), typecheck))
-         ; true )
-    ; true ).
+    ignore(note_source_space_consultation(Space)),
+    typed_space_runtime_value_ok(Space, Value).
 
 %A row the compiler proves against the declared schema needs no runtime
 %re-check, which would walk the whole row on every update. The proof is
@@ -521,7 +501,7 @@ proven_space_update('add-atom', 'add-atom-proven').
 proven_space_update('remove-atom', 'remove-atom-proven').
 
 bind_typed_space_pattern(Space, Pattern) :-
-    ( note_source_space_consultation(Space) -> true ; true ),
+    ignore(note_source_space_consultation(Space)),
     ( atom(Space), declared_space_type(Space, RowT)
       -> ( typed_space_pattern_mismatch(Pattern, RowT)
            -> throw(error(literal_type_mismatch(Pattern, RowT), typecheck))
@@ -680,7 +660,7 @@ translate_expr([H0|T0], Expectation, Goals, Out) :-
           list_type(Expected, ET),
           ( HV == cons ; HV == 'cons-atom' ),
           T = [HeadExpr, TailExpr]
-          -> translate_expected_list_element(HeadExpr, ET, HV, GsHead, Head),
+          -> translate_expected_element(HeadExpr, ET, HV, GsHead, Head),
              translate_expr(TailExpr, expected(Expected), GsTail, Tail),
              check_call_arg(declared, HV, Tail, Expected, TailChecks),
              append([GsH, GsHead, GsTail, TailChecks], Inner),
