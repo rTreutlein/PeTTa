@@ -1,5 +1,7 @@
 #!/bin/sh
 
+swipl -q -s tests/test_parser_swrite.pl -g run_tests -t halt || exit 1
+
 # strict_* and fail_strict_* examples run with the --strict typechecking flag:
 mode_arg_for_test() {
     base=$(basename "$1")
