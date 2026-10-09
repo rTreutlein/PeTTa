@@ -43,17 +43,17 @@ remove_sexp(Space, [Rel|Args]) :- Term =.. [Space, Rel | Args],
 %Remove all same atoms:
 'remove-atom'(Space, Term, true) :- remove_sexp(Space, Term).
 
-% A space is a predicate per row arity, created by the first add-atom. A
-% space that is read before it is written does not exist to Prolog, and each
-% call would take the undefined-procedure path with an autoload search.
-% Reading a space creates it: declare the predicate dynamic on first
-% reference, so an empty space is a defined predicate with no clauses.
-space_call(Term) :- functor(Term, Space, Arity),
-                    (   current_predicate(Space/Arity)
-                    ->  true
-                    ;   dynamic(Space/Arity)
-                    ),
-                    catch(Term, _, fail).
+% A space is a predicate per row arity, created by the first add-atom. Reading
+% a space before it is written calls an undefined predicate, and every such
+% call would search the autoloader before failing. The first call declares the
+% space's predicate dynamic instead, so later reads are plain calls on an empty
+% predicate; reads of existing spaces pay nothing extra.
+space_call(Term) :- catch(Term, E, space_missing(E, Term)).
+
+space_missing(error(existence_error(procedure, Space/Arity), _), Term) :-
+    functor(Term, Space, Arity), !,
+    dynamic(Space/Arity),
+    fail.
 
 %Match for conjunctive pattern
 match(_, LComma, OutPattern, Result) :- LComma == [','], !,
