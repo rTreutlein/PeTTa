@@ -43,15 +43,11 @@ with_unified_file_analysis(ParsedForms, Goal) :-
     ; solve_file_analysis(
           Pending, Summaries, ClauseRecords, CacheEntries),
       current_bridge_generation(Generation),
-      setup_call_cleanup(
-          begin_nested_mutation_log(SavedMutations),
-          ( setup_call_cleanup(
-                push_bridge_scope(
-                    scope(Generation, Summaries, ClauseRecords), Saved),
-                call(Goal),
-                pop_bridge_scope(Saved)),
-            nested_mutation_events(Events) ),
-          restore_nested_mutation_log(SavedMutations)),
+      with_b_value('$unified_nested_mutations', [], [],
+          ( with_bridge_scope(scope(Generation, Summaries, ClauseRecords),
+                call(Goal)),
+            b_getval('$unified_nested_mutations', Events0),
+            sort(Events0, Events) )),
       publish_or_refresh_cache_entries(
           Generation, Pending, CacheEntries, Events) ).
 
@@ -80,10 +76,8 @@ with_unified_recompile_analysis(Functions, Goal) :-
       clause_records_from_results(Sources, ClauseResults, Records),
       summary_cache_entries(Summaries, Relevant, CacheEntries),
       current_bridge_generation(Generation),
-      setup_call_cleanup(
-          push_bridge_scope(scope(Generation, Summaries, Records), Saved),
-          call(Goal),
-          pop_bridge_scope(Saved)),
+      with_bridge_scope(scope(Generation, Summaries, Records),
+          call(Goal)),
       publish_cache_entries_if_current(Generation, CacheEntries) ).
 
 recompile_clause_sources(Functions, Universe, Sources) :-
@@ -95,49 +89,32 @@ source_owned_by(Functions, clause_source(F, _, _)) :-
 
 with_unified_clause_analysis(Source, Goal) :-
     ( bridge_scope(scope(_, _, Records)),
-      record_for_source(Records, Source, Record)
+      scope_record(Records, Source, Record)
       -> with_current_clause(Record, Goal)
-    ; bridge_scope(scope(_, _, Records)),
-      aligned_record_for_source(Records, Source, Record)
-      -> with_current_clause(Record, Goal)
-    ; raw_bridge_scope(scope(_, _, StaleRecords)),
-      record_for_source(StaleRecords, Source, StaleRecord),
-      current_stored_summaries(Source, Summaries, ClauseResults),
-      solver_record_or_refresh(
-          Source, ClauseResults, StaleRecord, Summaries, FreshRecord)
+    ; % A nested import or runtime mutation invalidated the batch summaries
+      % but not this occurrence's IR, or the batch scope has ended
+      % (recompilation): reanalyze against fresh summaries of the current
+      % stored call closure.
+      ( raw_bridge_scope(scope(_, _, StaleRecords)),
+        scope_record(StaleRecords, Source, StaleRecord),
+        current_stored_summaries(Source, Summaries, ClauseResults),
+        ( clause_record_from_results(Source, ClauseResults, SolverRecord)
+          -> FreshRecord = SolverRecord
+        ; refresh_clause_record(StaleRecord, Summaries, FreshRecord) )
+      ; stored_clause_source(Source),
+        current_stored_summaries(Source, Summaries, ClauseResults),
+        ( clause_record_from_results(Source, ClauseResults, SolverRecord)
+          -> FreshRecord = SolverRecord
+        ; fresh_clause_record(Source, Summaries, FreshRecord) ) )
       -> current_bridge_generation(Generation),
-         % A nested import or runtime mutation invalidated the batch summaries
-         % but not this occurrence's IR: reanalyze it against fresh summaries
-         % of the current stored call closure.
-         setup_call_cleanup(
-             push_bridge_scope(
-                 scope(Generation, Summaries, [FreshRecord]), ScopeSaved),
-             with_current_clause(FreshRecord, Goal),
-             pop_bridge_scope(ScopeSaved))
-    ; raw_bridge_scope(scope(_, _, StaleRecords)),
-      aligned_record_for_source(StaleRecords, Source, StaleRecord),
-      current_stored_summaries(Source, Summaries, ClauseResults),
-      solver_record_or_refresh(
-          Source, ClauseResults, StaleRecord, Summaries, FreshRecord)
-      -> current_bridge_generation(Generation),
-         setup_call_cleanup(
-             push_bridge_scope(
-                 scope(Generation, Summaries, [FreshRecord]), ScopeSaved),
-             with_current_clause(FreshRecord, Goal),
-             pop_bridge_scope(ScopeSaved))
-    ; stored_clause_source(Source),
-      current_stored_summaries(Source, Summaries, ClauseResults),
-      solver_record_or_fresh(
-          Source, ClauseResults, Summaries, FreshRecord)
-      -> current_bridge_generation(Generation),
-         % Recompilation after the batch scope has ended: rebuild the current
-         % stored call closure.
-         setup_call_cleanup(
-             push_bridge_scope(
-                 scope(Generation, Summaries, [FreshRecord]), ScopeSaved),
-             with_current_clause(FreshRecord, Goal),
-             pop_bridge_scope(ScopeSaved))
+         with_bridge_scope(scope(Generation, Summaries, [FreshRecord]),
+                           with_current_clause(FreshRecord, Goal))
     ; call(Goal) ).
+
+%An exact occurrence first, else a variant aligned to this source term:
+scope_record(Records, Source, Record) :-
+    ( record_for_source(Records, Source, Record)
+    ; aligned_record_for_source(Records, Source, Record) ).
 
 % Compiler-generated clauses (lambdas) are outside the parsed batch but need
 % the same edge isolation: give one an ephemeral record over the active
@@ -172,17 +149,6 @@ refresh_clause_record(clause_record(Source, IR, Env, Origins, _), Summaries,
                       clause_record(Source, IR, Env, Origins, Analysis)) :-
     analyze_lowered_clause(IR, Summaries, Analysis).
 
-solver_record_or_refresh(Source, ClauseResults, StaleRecord, Summaries,
-                         FreshRecord) :-
-    ( clause_record_from_results(Source, ClauseResults, SolverRecord)
-      -> FreshRecord = SolverRecord
-    ; refresh_clause_record(StaleRecord, Summaries, FreshRecord) ).
-
-solver_record_or_fresh(Source, ClauseResults, Summaries, FreshRecord) :-
-    ( clause_record_from_results(Source, ClauseResults, SolverRecord)
-      -> FreshRecord = SolverRecord
-    ; fresh_clause_record(Source, Summaries, FreshRecord) ).
-
 stored_clause_source(Source) :-
     catch(user:translated_from(Ref, Stored), _, fail),
     clause_property(Ref, predicate(_)),
@@ -192,12 +158,6 @@ fresh_clause_record(Source, Summaries,
                     clause_record(Source, IR, Env, Origins, Analysis)) :-
     try_lower_source_clause(Source, lowered(IR, Env, Origins)),
     analyze_lowered_clause(IR, Summaries, Analysis).
-
-with_current_clause(Record, Goal) :-
-    setup_call_cleanup(
-        push_current_clause(Record, Saved),
-        call(Goal),
-        pop_current_clause(Saved)).
 
 with_unified_edge_facts(SourceCondition, Truth, Goal) :-
     ( current_unified_clause_analysis(_, _, Env, Origins, Analysis),
@@ -209,13 +169,7 @@ with_unified_edge_facts(SourceCondition, Truth, Goal) :-
     ; call(Goal) ).
 
 with_unified_preanalyzed_form(Goal) :-
-    ( catch(b_getval('$unified_source_form', Saved0), _, fail)
-      -> Saved = Saved0
-    ; Saved = false ),
-    setup_call_cleanup(
-        b_setval('$unified_source_form', true),
-        call(Goal),
-        b_setval('$unified_source_form', Saved)).
+    with_b_value('$unified_source_form', false, true, Goal).
 
 current_unified_clause_analysis(Source, IR, Env, Origins, Analysis) :-
     catch(b_getval('$unified_current_clause', Record), _, fail),
@@ -224,8 +178,7 @@ current_unified_clause_analysis(Source, IR, Env, Origins, Analysis) :-
 current_unified_source_variable(Var) :-
     var(Var),
     current_unified_clause_analysis(_, _, Env, _, _),
-    member(binding(_, Stored), Env),
-    Stored == Var, !.
+    env_var_id(Env, Var, _).
 
 % Project the cardinality proved for this source builtin call. Prolog's ==
 % cannot tell apart separately built compounds sharing variables, so every
@@ -313,7 +266,7 @@ pending_clause_sources_([_|Forms], Pending) :-
     pending_clause_sources_(Forms, Pending).
 
 solve_file_analysis(Pending, Summaries, ClauseRecords, CacheEntries) :-
-    touched_keys(Pending, Keys),
+    source_keys(Pending, Keys),
     maplist(invalidate_pending_summary, Keys),
     clause_universe(Keys, Pending, ClauseSources),
     prepare_clause_universe(ClauseSources, Clauses),
@@ -325,10 +278,6 @@ solve_file_analysis(Pending, Summaries, ClauseRecords, CacheEntries) :-
 
 invalidate_pending_summary(Key) :-
     unified_checker_invalidate_event(clause_changed(Key, prevalidated)).
-
-touched_keys(Pending, Keys) :-
-    findall(F/N, member(clause_source(F, N, _), Pending), Keys0),
-    sort(Keys0, Keys).
 
 clause_universe(Keys, Pending, Clauses) :-
     current_stored_clause_sources(Stored),
@@ -348,11 +297,7 @@ current_stored_summaries(Source, Summaries, ClauseResults) :-
 solve_current_source_closure(RootSources, Summaries, ClauseResults) :-
     current_stored_clause_sources(Stored),
     ensure_sources_in_universe(RootSources, Stored, Sources),
-    solve_source_closure(RootSources, Sources, Summaries, ClauseResults).
-
-solve_source_closure(RootSources, Sources, Summaries, ClauseResults) :-
-    solve_source_closure(
-        RootSources, Sources, Summaries, ClauseResults, _).
+    solve_source_closure(RootSources, Sources, Summaries, ClauseResults, _).
 
 solve_source_closure(RootSources, Sources, Summaries, ClauseResults,
                      Relevant) :-
@@ -969,25 +914,10 @@ publish_or_refresh_cache_entries(Generation, Pending, Entries, Events) :-
       -> unified_summary_cache_store_many(Entries)
     ; refresh_pending_cache_entries(Pending, Events) ).
 
-begin_nested_mutation_log(saved_mutations(Had, Previous)) :-
-    ( catch(b_getval('$unified_nested_mutations', Stored), _, fail)
-      -> Had = yes, Previous = Stored
-    ; Had = no, Previous = [] ),
-    b_setval('$unified_nested_mutations', []).
-
-restore_nested_mutation_log(saved_mutations(yes, Previous)) :- !,
-    b_setval('$unified_nested_mutations', Previous).
-restore_nested_mutation_log(_) :-
-    b_setval('$unified_nested_mutations', []).
-
-nested_mutation_events(Events) :-
-    ( catch(b_getval('$unified_nested_mutations', Stored), _, fail)
-      -> sort(Stored, Events)
-    ; Events = [] ).
 
 refresh_pending_cache_entries(Pending, Events) :-
     maplist(unified_checker_invalidate_event, Events),
-    touched_keys(Pending, Keys),
+    source_keys(Pending, Keys),
     maplist(invalidate_pending_summary, Keys),
     current_stored_clause_sources(Stored),
     sources_for_keys(Keys, Stored, CurrentRoots),
@@ -1228,25 +1158,17 @@ bump_bridge_generation :-
     Next is Current + 1,
     nb_setval('$unified_checker_generation', Next).
 
-push_bridge_scope(Scope, saved(Had, Previous)) :-
-    ( catch(b_getval('$unified_checker_scope', Previous0), _, fail)
-      -> Had = yes, Previous = Previous0
-    ; Had = no, Previous = none ),
-    b_setval('$unified_checker_scope', Scope).
+%Run Goal with the backtrackable global Key set to Value, then restore the
+%outer value (Default when Key was unset).
+with_b_value(Key, Default, Value, Goal) :-
+    ( catch(b_getval(Key, Outer), _, fail) -> true ; Outer = Default ),
+    setup_call_cleanup(b_setval(Key, Value), Goal, b_setval(Key, Outer)).
 
-pop_bridge_scope(saved(yes, Previous)) :- !,
-    b_setval('$unified_checker_scope', Previous).
-pop_bridge_scope(_) :- b_setval('$unified_checker_scope', inactive).
+with_bridge_scope(Scope, Goal) :-
+    with_b_value('$unified_checker_scope', inactive, Scope, Goal).
 
-push_current_clause(Record, saved(Had, Previous)) :-
-    ( catch(b_getval('$unified_current_clause', Previous0), _, fail)
-      -> Had = yes, Previous = Previous0
-    ; Had = no, Previous = none ),
-    b_setval('$unified_current_clause', Record).
-
-pop_current_clause(saved(yes, Previous)) :- !,
-    b_setval('$unified_current_clause', Previous).
-pop_current_clause(_) :- b_setval('$unified_current_clause', inactive).
+with_current_clause(Record, Goal) :-
+    with_b_value('$unified_current_clause', inactive, Record, Goal).
 
 
 
@@ -1270,11 +1192,9 @@ test(exact_builtin_call_card_uses_retained_flow_analysis) :-
     analyze_ir(IR, State, Analysis),
     Record = clause_record(Source, IR, Env, Origins, Analysis),
     copy_term(Call, CopiedCall),
-    setup_call_cleanup(
-        push_current_clause(Record, Saved),
+    with_current_clause(Record,
         ( unified_builtin_call_card(Call, card(1,1)),
-          \+ unified_builtin_call_card(CopiedCall, _) ),
-        pop_current_clause(Saved)),
+          \+ unified_builtin_call_card(CopiedCall, _) )),
     var(Term), var(Head), var(Tail).
 
 test(node_card_does_not_hide_fallible_positional_match) :-
@@ -1289,10 +1209,8 @@ test(node_card_does_not_hide_fallible_positional_match) :-
     analyze_ir(IR, State, Analysis),
     analysis_card(Analysis, card(0,1)),
     Record = clause_record(Source, IR, Env, Origins, Analysis),
-    setup_call_cleanup(
-        push_current_clause(Record, Saved),
-        \+ unified_builtin_call_card(Call, _),
-        pop_current_clause(Saved)),
+    with_current_clause(Record,
+        \+ unified_builtin_call_card(Call, _)),
     var(Term), var(Field).
 
 test(ambiguous_equal_source_calls_require_one_card) :-
@@ -1307,11 +1225,9 @@ test(ambiguous_equal_source_calls_require_one_card) :-
     state_empty(State),
     analyze_ir(IR, State, Analysis),
     Record = clause_record(Source, IR, Env, Origins, Analysis),
-    setup_call_cleanup(
-        push_current_clause(Record, Saved),
+    with_current_clause(Record,
         ( \+ unified_builtin_call_card(First, card(1,1)),
-          \+ unified_builtin_call_card(Second, card(1,1)) ),
-        pop_current_clause(Saved)),
+          \+ unified_builtin_call_card(Second, card(1,1)) )),
     var(Term).
 
 test(unsupported_lowering_is_a_clause_local_fallback) :-
@@ -1792,56 +1708,38 @@ test(scoped_summary_shadows_persistent_facts,
       cleanup(unified_summary_cache_reset)]) :-
     current_bridge_generation(Generation),
     Record = clause_record(scope_test, scope_ir, [], [], scope_analysis),
-    setup_call_cleanup(
-        push_bridge_scope(
-            scope(Generation,
+    with_bridge_scope(scope(Generation,
                   [function_summary(shadowed, 0, card(1,1), [], [], [])],
                   [Record]),
-            Saved),
-        setup_call_cleanup(
-            push_current_clause(Record, ClauseSaved),
-            \+ unified_function_result_fact(shadowed, 0, proper_bool),
-            pop_current_clause(ClauseSaved)),
-        pop_bridge_scope(Saved)).
+        with_current_clause(Record,
+            \+ unified_function_result_fact(shadowed, 0, proper_bool))).
 
 test(runtime_mutation_invalidates_active_scope) :-
     current_bridge_generation(Generation),
     Record = clause_record(scope_test, scope_ir, [], [], scope_analysis),
-    setup_call_cleanup(
-        push_bridge_scope(
-            scope(Generation,
+    with_bridge_scope(scope(Generation,
                   [function_summary(producer, 0, card(1,1),
                                     [proper_bool], [], [])],
                   [Record]),
-            Saved),
-        setup_call_cleanup(
-            push_current_clause(Record, ClauseSaved),
+        with_current_clause(Record,
             ( unified_function_result_fact(producer, 0, proper_bool),
               unified_checker_invalidate_event(
                   clause_changed(producer/0, runtime)),
               \+ unified_function_result_fact(producer, 0, proper_bool),
-              \+ bridge_scope(_) ),
-            pop_current_clause(ClauseSaved)),
-        pop_bridge_scope(Saved)).
+              \+ bridge_scope(_) ))).
 
 test(source_form_mutation_keeps_active_scope) :-
     current_bridge_generation(Generation),
     Record = clause_record(scope_test, scope_ir, [], [], scope_analysis),
-    setup_call_cleanup(
-        push_bridge_scope(
-            scope(Generation,
+    with_bridge_scope(scope(Generation,
                   [function_summary(producer, 0, card(1,1),
                                     [proper_bool], [], [])],
                   [Record]),
-            Saved),
-        setup_call_cleanup(
-            push_current_clause(Record, ClauseSaved),
+        with_current_clause(Record,
             ( with_unified_preanalyzed_form(
                   unified_checker_invalidate_event(
                       declaration_changed(value, token, added))),
               unified_function_result_fact(producer, 0, proper_bool),
-              bridge_scope(_) ),
-            pop_current_clause(ClauseSaved)),
-        pop_bridge_scope(Saved)).
+              bridge_scope(_) ))).
 
 :- end_tests(unified_checker_bridge).
