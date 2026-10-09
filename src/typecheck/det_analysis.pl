@@ -211,10 +211,9 @@ underapplied_closure(Fun, N) :- CallArity is N + 1,
 %(once E) caps the solution count at one, erasing nondeterminism and opacity,
 %but it fails exactly when E does, so it keeps may_fail.
 once_determinism(Expr, Result) :- deterministic_expr_core(Expr, R),
-                                  ( R == ok -> Result = ok
-                                  ; R = may_fail(_) -> Result = R
-                                  ; R = nondeterministic(Why) -> Result = may_fail(once(Why))
-                                  ; R = unknown(Why) -> Result = may_fail(once(Why))
+                                  ( ( R == ok ; R = may_fail(_) ) -> Result = R
+                                  ; ( R = nondeterministic(Why) ; R = unknown(Why) )
+                                    -> Result = may_fail(once(Why))
                                   ; Result = may_fail(once(R)) ).
 
 det_result_rank(ok, 0).

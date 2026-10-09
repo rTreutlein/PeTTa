@@ -1171,7 +1171,7 @@ translate_typed_call(Fun, Bound, Args, GsH, Goals, Out) :-
                   disj_list(Branches, Disj),
                   append(GsH, GsT, Pre),
                   append(Pre, [goal_or_throw(Disj, error(no_matching_overload(Fun), typecheck))], Goals) )
-        ; findall(pt(PTs, RTs, OT), fn_decl_partial(Fun, NTotal, PTs, RTs, OT), PartDecls),
+        ; findall(pt(PTs, RTs, OT), fn_decl_partial(Fun, NTotal, PTs, RTs, OT, _), PartDecls),
           PartDecls = [pt(PTs, _, _)]
           -> translate_args(Args, GsT, AVs0),                      %typed partial application
              append(Bound, AVs0, AVs),

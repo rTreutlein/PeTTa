@@ -840,7 +840,6 @@ forget_symbol_types(Name) :- remove_all_fn_decl_records(Name),
 %%% Store lookup (each retrieval yields a fresh copy of the declaration):
 fn_decl_arity(F, N, ATs, OT) :- declared_fn_type(F, ATs, OT, _), length(ATs, N).
 unique_fn_decl(F, N, ATs, OT) :- findall(A-O, fn_decl_arity(F, N, A, O), [ATs-OT]).
-fn_decl_partial(F, N, PTs, RTs, OT) :- fn_decl_partial(F, N, PTs, RTs, OT, _).
 fn_decl_partial(F, N, PTs, RTs, OT, Det) :- declared_fn_type(F, ATs, OT, Det),
                                             length(ATs, Total), Total > N,
                                             length(PTs, N), append(PTs, RTs, ATs).
