@@ -59,6 +59,10 @@
 (: is-alpha-member (-> $a $b Bool))
 (: =alpha (-> $a $b Bool))
 (: =@= (-> $a $b Bool))
+(: @< (-> $a $b Bool))
+(: @> (-> $a $b Bool))
+(: @<= (-> $a $b Bool))
+(: @>= (-> $a $b Bool))
 (: =? (-> $a $b Bool))
 
 ;; Type definitions of expression helpers with concrete outputs

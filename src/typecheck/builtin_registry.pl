@@ -89,6 +89,10 @@ builtin_spec('!='/2, implementation(metta), typing(signature(unspecified, [_A,_B
 builtin_spec('=?'/2, implementation(metta), typing(signature(unspecified, [_A,_B], 'Bool')), evaluation(eager), cardinality(fixed(det)), lowering(generic)).
 builtin_spec('=alpha'/2, implementation(metta), typing(signature(unspecified, [_A,_B], 'Bool')), evaluation(eager), cardinality(fixed(det)), lowering(generic)).
 builtin_spec('=@='/2, implementation(metta), typing(signature(unspecified, [_A,_B], 'Bool')), evaluation(eager), cardinality(fixed(det)), lowering(generic)).
+builtin_spec('@<'/2, implementation(metta), typing(signature(unspecified, [_A,_B], 'Bool')), evaluation(eager), cardinality(fixed(det)), lowering(generic)).
+builtin_spec('@>'/2, implementation(metta), typing(signature(unspecified, [_A,_B], 'Bool')), evaluation(eager), cardinality(fixed(det)), lowering(generic)).
+builtin_spec('@<='/2, implementation(metta), typing(signature(unspecified, [_A,_B], 'Bool')), evaluation(eager), cardinality(fixed(det)), lowering(generic)).
+builtin_spec('@>='/2, implementation(metta), typing(signature(unspecified, [_A,_B], 'Bool')), evaluation(eager), cardinality(fixed(det)), lowering(generic)).
 
 % CLP(FD) arithmetic and comparisons.
 builtin_spec('#+'/2, implementation(metta), typing(untyped), evaluation(eager), cardinality(fixed(det)), lowering(generic)).
