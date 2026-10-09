@@ -16,12 +16,10 @@ constrain_args(Pattern, Var, Goals) :-
 constrain_args(In, Out, Goals) :- maplist(constrain_args, In, Out, NestedGoalsList),
                                   flatten(NestedGoalsList, Goals), !.
 
-%The single definition of a functional pattern position.  It deliberately
-%matches constrain_args/3's dispatch boundary: registered functions elaborate
-%to calls, while source cons and declaration-only constructors remain literal
-%pattern structure.  Args must be a proper source-expression list: specialization
-%may produce an open pattern [F|Tail], whose arity is not fixed and must not be
-%sent to callers that discover it with length/2.
+%The single definition of a functional pattern position, matching
+%constrain_args/3's dispatch: registered functions elaborate to calls, while
+%cons and declaration-only constructors stay literal. Args must be a proper
+%list; specialization may produce an open pattern [F|Tail] of no fixed arity.
 functional_pattern_application([F|Args], F, Args) :-
     atom(F), F \== cons, fun(F),
     is_list(Args).
@@ -85,26 +83,22 @@ translate_clause_core(Input, (Head :- BodyConj), ConstrainArgs) :-
                                                %Snapshot the declared arg positions that stay bare type variables after
                                                %head binding; checked below to enforce their claimed universality:
                                                parametric_param_snapshot(DeclOut, ParamVars),
-                                               %...and publish them for the body compile: they are
-                                               %promises to the caller, so neither a discharge nor a
-                                               %compiler guess may treat one as knowledge. A specialized
-                                               %copy promises nothing new (it is an instance):
+                                               %...and publish them for the body: they are promises
+                                               %to the caller, not knowledge (a specialized copy is an
+                                               %instance and promises nothing new):
                                                ( ConstrainArgs == false -> Promises = [] ; Promises = ParamVars ),
                                                param_promises_scope(Promises, OuterPromises),
-                                               %Specialized clause copies (ConstrainArgs == false) are instances of
-                                               %already-validated clauses: bind their (more specific) param types for
-                                               %guard elimination, but skip the determinism/strict/output checks.
-                                               %Determinism runs after param binding so closure params carry their
-                                               %declared arrow types into the body analysis.
+                                               %Specialized copies (ConstrainArgs == false) are instances
+                                               %of validated clauses: bind their param types for guard
+                                               %elimination but skip the determinism/strict checks.
+                                               %Determinism runs after param binding so closure params
+                                               %carry their declared arrows into the body analysis.
                                                ( ConstrainArgs == false -> true
                                                                          ; validate_function_determinism(F, Args1, BodyExpr,
                                                                                                          Prev, HeadForm) ),
-                                               %A function whose declaration carries an EXPLICIT -[det]->/-[semidet]->
-                                               %arrow promises, in EVERY mode, that it is called with bound arguments -
-                                               %but only for the parameters its determinism proof CONSUMED. Emit those
-                                               %runtime boundness checks now, AFTER validation has populated the
-                                               %det_bound_proviso union, while the param vars are still fresh; they are
-                                               %spliced in before the commit cut below (goal-term position unchanged).
+                                               %Explicit -[det]->/-[semidet]-> arrows promise bound
+                                               %arguments for the parameters the determinism proof
+                                               %consumed: emit those checks before the commit cut.
                                                det_boundness_checks(F, Args1, DetChecks),
                                                begin_clause_inference(F, Args1, Assume, SavedInf),
                                                translate_declared_body(F, DeclOut, BodyExpr, GoalsBody, ExpOut),
@@ -121,15 +115,10 @@ translate_clause_core(Input, (Head :- BodyConj), ConstrainArgs) :-
                                                   end_clause_inference(F, Args1, none, none, SavedInf)
                                                ; FinalGoals= GoalsBody , HeadArgs = Args1, Out = ExpOut,
                                                  end_clause_inference(F, Args1, ExpOut, Assume, SavedInf),
-                                                 %The output certification runs for a SPECIALIZED copy too.
-                                                 %It is an instance, so it can only make the result type more
-                                                 %specific - it either discharges statically (one guard less),
-                                                 %reproduces the general clause's guard, or finds a definite
-                                                 %conflict, in which case the typecheck error means "do not
-                                                 %specialize" and the call falls back to the general, guarded
-                                                 %clause. Skipping it let the specializer DROP a guard the
-                                                 %general clause was compiled with, which is the one outcome
-                                                 %that is not sound:
+                                                 %A specialized copy is still output-certified: it can
+                                                 %only discharge, reproduce or contradict the general
+                                                 %clause's guard, and a contradiction means "do not
+                                                 %specialize". Skipping it would drop a guard.
                                                  clause_output_goals(F, DeclOut, Args1, ExpOut,
                                                                      BodyExpr, OutChecks0),
                                                  oracle_output_check(DeclOut, Out, OutChecks0, OutChecks) ),
@@ -139,50 +128,25 @@ translate_clause_core(Input, (Head :- BodyConj), ConstrainArgs) :-
                                                Head =.. [F|FinalArgs],
                                                length(FinalArgs, CompiledArity),
                                                (arity(F, CompiledArity) -> true ; assertz(arity(F, CompiledArity))),
-                                               %declared-deterministic functions commit to the first matching
-                                               %clause (non-overlap is validated), guaranteeing no choicepoints
-                                               %and enabling last-call optimization. -[semidet]-> commits
-                                               %identically: allowing failure costs no choicepoint, so a
-                                               %semidet function is as cheap as a det one:
+                                               %Committed functions commit to the first matching
+                                               %clause (non-overlap is validated): no choicepoints,
+                                               %last-call optimization, semidet as cheap as det:
                                                ( clause_commit_cut(F, Args1) -> Commit = [!] ; Commit = [] ),
                                                param_promises_restore(OuterPromises),
                                                append([DetChecks, GoalsPrefix, Commit, FinalGoals, OutChecks], Goals),
                                                goals_list_to_conj(Goals, BodyConj).
 
-%%% Committed-arrow BOUNDNESS enforcement, NEED-BASED. Explicit det/semidet
-%%% arrows are every-mode promises; a plain arrow participates while
-%%% --strict-det makes it a commitment. A parameter is
-%%% checked nonvar on entry ONLY when the clause-set's determinism proof actually
-%%% CONSUMED its boundness - i.e. enforced_bound_param/1 succeeded on it during a
-%%% call-site strengthening (manifest_bool, enforced_bound_nominal,
-%%% enforced_bound_tuple, is-member probe). The emitted check is then exactly the
-%%% proviso the certificate relied on: a pure data constructor
-%%% ((= (pair-up $x $y) ($x $y))) is genuinely det with unbound args, consumes no
-%%% boundness, and gets NO check. Where a check IS emitted it throws a clear error
-%%% where the code previously enumerated a finite type or crashed in a builtin.
-%%%
-%%% The consumed positions are the per-function UNION
-%%% det_bound_proviso(F,N,Pos,Kind),
-%%% populated by validation (validate_function_determinism, run just before this).
-%%% A param consumed by ANY clause is checked in EVERY clause of the function -
-%%% a sound superset of the strict per-clause need (an extra check never unsound).
-%%%
-%%% SPINE-LEVEL, deliberately: enforced_bound_param/1 records DIRECT params only
-%%% (a destructured FIELD is skipped by det_direct_param/1), so a field is never a
-%%% proviso and never checked. Chainer proof terms legitimately carry unbound vars
-%%% inside otherwise-bound data, so field-level enforcement would reject them. The
-%%% is-var exemption is preserved for free: det_enforced_params/3 keeps an is-var
-%%% param out of the published direct params, so enforced_bound_param/1 can never
-%%% consume it and no proviso is ever recorded for it.
-%%%
-%%% Specialized clause copies (ConstrainArgs == false) get the same checks -
-%%% calls route directly to them - reading the union the general clauses filled;
-%%% a position bound by specialization is nonvar here and simply skipped. The
-%%% late-declaration recompile clears and re-derives the union, then re-emits.
-%The consumed POSITIONS are collected first (ground integers, so findall's copy
-%is harmless), then the check goals are built OUTSIDE findall so each nonvar
-%guard shares the actual head-argument variable - collecting the goals through
-%findall would copy that variable and guard a disconnected fresh one instead.
+%%% Committed-arrow boundness enforcement. A parameter is checked nonvar on
+%%% entry only when the clause set's determinism proof consumed its boundness
+%%% (enforced_bound_param/1 during a call-site strengthening), so a pure data
+%%% constructor ((= (pair-up $x $y) ($x $y))) gets no check. The positions are
+%%% the per-function union det_bound_proviso(F, N, Pos, Kind) filled by
+%%% validation; a position consumed by any clause is checked in every clause.
+%%% Only direct parameters are provisos: proof terms legitimately carry
+%%% unbound variables inside bound data, and is-var-exempt parameters are never
+%%% consumed. Specialized copies read the same union.
+%The positions are collected first (ground, so findall's copy is harmless) and
+%the goals built outside findall, so each guard shares the real head variable.
 det_boundness_checks(F, Args, Checks) :-
     ( length(Args, N), boundary_commitment(F, N, Det)
       -> findall(Pos, det_bound_proviso(F, N, Pos, _), Ps0),
@@ -218,15 +182,11 @@ function_has_conditional_commit(F, N) :-
 
 length_of_source_args([=, [_|Args], _], N) :- length(Args, N).
 
-%%% Recompile one graph node.  Clauses are redone TOGETHER and IN SOURCE
-%%% ORDER: overlap validation compares each clause with its predecessors, so
-%%% the meta list must be rebuilt from empty.  Dependency publication is
-%%% replaced clause-ref by clause-ref at the final swap boundary.
-%%%
-%%% Translation and validation are STAGED while every old executable clause
-%%% remains live. Only a complete successful stage erases and swaps them, so a
-%%% validation exception cannot strand the function half-recompiled. Errors
-%%% still propagate exactly as a fresh compilation would.
+%%% Recompile one graph node. Clauses are redone together and in source order,
+%%% since overlap validation compares each clause with its predecessors.
+%%% Translation and validation are staged while the old clauses stay live, and
+%%% only a complete stage swaps them, so an exception cannot leave the function
+%%% half-recompiled.
 recompile_function_clauses(F) :-
     function_source_clauses(F, Us),
     ( Us == [] -> true
@@ -357,20 +317,13 @@ translate_expr_to_conj(Input, Expectation, Conj, Out) :-
         translate_expr(Input, Expectation, Goals, Out),
         goals_list_to_conj(Goals, Conj).
 
-%%% Narrow bidirectional typing for declared product/list results.
-%
-%The ordinary translator is bottom-up. At a declared function boundary we
-%also know the expected result type, so positional tuples and runtime lists can
-%be checked element-by-element while constructed. The expectation follows
-%result positions through if/case, match, and let/let*, but deliberately no
-%farther: this is not a general inference rewrite, and folds retain their
-%existing rules.
-%
-%Only POSITIONAL products and (List T) participate. A tagged structural type
-%has a literal runtime tag and remains constructor-checked by the ordinary
-%bottom-up path; `data` itself remains product-only.
-%The target branch's Atom convention means a function declared to return Atom
-%returns its body as source data rather than evaluating it.
+%%% Narrow bidirectional typing for declared product/list results. At a
+%%% declared function boundary the expected result type is known, so positional
+%%% tuples and runtime lists are checked element by element while constructed.
+%%% The expectation follows result positions through if/case, match and
+%%% let/let*, and no farther. Tagged structural types keep the ordinary
+%%% bottom-up constructor check.
+%A function declared to return Atom returns its body as source data:
 translate_declared_body(F, out('Atom', _), Expr, [], Expr) :-
         declared_output_type(F, 'Atom'), !.
 translate_declared_body(_, out(OT, _), Expr, Goals, Out) :-
@@ -388,10 +341,8 @@ contextual_product_type(T) :- nonvar(T), is_list(T),
 contextual_expected_type(T) :- ( contextual_product_type(T)
                                ; nonvar(T), list_type(T, _) ).
 
-%A brand is erased only after its payload has been checked. When the declared
-%representation is one of the existing contextual shapes, feed that shape
-%into the same expectation spine used by ordinary declared results. No other
-%representation gains a new propagation rule.
+%A brand is erased only after its payload has been checked: a representation
+%with a contextual shape feeds the same expectation spine.
 brand_payload_expectation(T, expected(Rep)) :-
     atom(T),
     declared_newtype(T, Rep),
@@ -407,10 +358,9 @@ explicit_list_expectation(expected(Expected), expected(ET)) :-
         list_type(Expected, ET), !.
 explicit_list_expectation(_, none).
 
-%`data` is an erased, explicitly non-callable expression constructor. With an
-%expected positional shape, every field is checked as a declared obligation
-%before the result receives that type. Without an expectation, fully known
-%field types still give the result a bottom-up positional type.
+%`data` is an erased, non-callable expression constructor. With an expected
+%positional shape every field is a declared obligation; without one, known
+%field types still give a positional type.
 translate_explicit_data(Fields, expected(FieldTs), Goals, Out) :- !,
         translate_expected_fields(Fields, FieldTs, Gs, Values),
         set_out_type(Out, FieldTs),
@@ -469,19 +419,11 @@ rewrite_streamops([unique, Arg],
                   [call, [superpose, ['unique-atom', [collapse, Arg]]]]).
 rewrite_streamops(['alpha-unique', Arg],
                   [call, [superpose, ['alpha-unique-atom', [collapse, Arg]]]]).
-%For a variable with a known union or positional-product type, unification
-%against inert case structure is exactly a two-branch committed pattern match:
-%successful bindings are visible in Then, while failed bindings are undone
-%before Else.
-%Lower that narrowing-bearing source shape to case so its existing
-%constructor/field and fallthrough-union logic applies in both branches.
-%A positional product matters after a preceding case subtraction: the reduced
-%union may now be one product member, and a variable-headed tuple is inert data
-%whose fields can be typed by position. Outside either known shape there is no
-%narrowing to gain, so the established eager equality path stays untouched. A
-%fun-headed or compiler-form subterm also stays eager: case elaboration would
-%be a different operation from evaluating it as an equality operand. `==` is
-%deliberately absent because it tests identity without binding.
+%For a variable of known union or positional-product type, unification against
+%inert case structure is a committed two-branch pattern match, so lower it to
+%case and reuse its constructor/field and fallthrough-union narrowing. Other
+%shapes, fun-headed or compiler-form subterms, and identity-only == keep the
+%eager equality path.
 rewrite_streamops([If, [Eq, V, Pattern], Then, Else],
                   [case, V, [[Pattern, Then], [Fallthrough, NarrowElse]]]) :-
     If == if,
@@ -586,21 +528,17 @@ bind_typed_space_pattern(Space, Pattern) :-
          ; bind_pattern_typed(Pattern, RowT, []) )
     ; true ).
 
-%Functional elaboration belongs to schema-aware space patterns.  Untyped
-%spaces (especially &self) are also used to inspect source atoms such as
-%(= (f ...) ...); interpreting their registered heads as calls would destroy
-%that quoted-data behavior.
+%Functional elaboration belongs to schema-aware space patterns; untyped spaces
+%(&self) are also used to inspect source atoms such as (= (f ...) ...).
 elaborate_typed_space_pattern(Space, Pattern, RuntimePattern, Goals) :-
     atom(Space), declared_space_type(Space, _), !,
     constrain_typed_space_args(Pattern, RuntimePattern, Goals).
 elaborate_typed_space_pattern(_, Pattern, Pattern, []).
 
 %A schema-backed functional pattern is an exact-one inverse constraint.
-%Registered nondet functions can also occur as literal payload tags (the
-%chainer's cpu-call truth-value marker is the motivating real program), and
-%executing them here would change data inspection into enumeration.  Require
-%one unique declared det arrow; the rule is effect-generic and gives @ no
-%privilege over any other det relation.
+%Registered nondet functions can also appear as literal payload tags, and
+%executing them would turn inspection into enumeration, so only a unique
+%declared det arrow elaborates.
 constrain_typed_space_args(X, X, []) :- (var(X); atomic(X)), !.
 constrain_typed_space_args([F, A, B], Out, Goals) :-
     nonvar(F), F == cons, !,
@@ -691,10 +629,8 @@ builtin_codegen_rule_defined(typed_space_match).
 builtin_codegen_rule_defined(typed_space_update).
 builtin_codegen_rule_defined(with_mutex).
 
-%Turn a MeTTa S-expression into goals.  The four-argument traversal is the
-%single syntax walk; the established three-argument entry is its bottom-up
-%view.  Only the handful of result positions documented above pass expected(T)
-%on recursively.
+%Turn a MeTTa S-expression into goals. The four-argument traversal is the one
+%syntax walk; only the result positions documented above pass expected(T) on.
 translate_expr(Expr, Goals, Out) :-
         translate_expr(Expr, none, Goals, Out).
 
@@ -707,10 +643,8 @@ translate_expr(X, expected(Expected), [], X) :-
 translate_expr(X, _, [], X) :-
         ((var(X) ; atomic(X)) ; X = partial(_,_)), !.
 
-%Do not let an expectation turn a compound with a source-variable head into a
-%syntax form.  It is data whose head is unbound.  This guard is the
-%($proof)/(make-list) invariant: only literal atom heads enter special-form
-%dispatch under an expectation.
+%A compound with a source-variable head is data, so an expectation never sends
+%it into special-form dispatch:
 translate_expr(Expr, expected(_), Goals, Out) :-
         nonvar(Expr), Expr = [H|_], \+ atom(H), !,
         translate_expr(Expr, none, Goals, Out).
@@ -759,13 +693,10 @@ translate_expr([H0|T0], Expectation, Goals, Out) :-
                                                         append(GsH, [Disj], Goals)
         ; special_builtin_form(HV, T, collapse_all), T = [E]
           -> translate_expr_to_conj(E, Conj, EV),
-                                     %always a list; a single element type is carried, several
-                                     %become a union (an open variable would later unify with a
-                                     %concrete requirement and wrongly certify a mixed list):
-                                     %an element type that is not certain leaves ET open, which
-                                     %would unify with ANY required element type: record the
-                                     %ignorance explicitly so the (List T) claim is not discharged
-                                     %by the open variable alone
+                                     %always a list: one element type is carried, several
+                                     %become a union, and an uncertain element type is
+                                     %recorded as unknown, since an open ET would unify with
+                                     %any required element type:
                                      collapse_elem_type(EV, ET, ElemKnown),
                                      set_out_type(Out, ['List', ET]),
                                      ( ElemKnown == true -> true ; note_unknown_candidate(Out) ),
@@ -972,10 +903,8 @@ translate_expr([H0|T0], Expectation, Goals, Out) :-
                                            append(FreeVars, Args, FullArgs),
                                            % compile clause with all bound + free vars
                                            LambdaSource = [=, [F|FullArgs], Body],
-                                           % A lambda body is deferred code.  Compile an attributed copy so
-                                           % its local type inference can use the captured variables' current
-                                           % facts without publishing facts produced inside the body back into
-                                           % the enclosing expression before the closure is invoked.
+                                           % A lambda body is deferred code: compile an attributed copy, so
+                                           % facts produced inside it do not reach the enclosing expression.
                                            copy_term(LambdaSource, IsolatedLambdaSource),
                                            with_unified_ad_hoc_clause_analysis(
                                                IsolatedLambdaSource,
@@ -1011,11 +940,9 @@ translate_expr([H0|T0], Expectation, Goals, Out) :-
                                                          RuntimePattern,
                                                          PatternGoals),
                                                      translate_expr(Body, Expectation, GsB, Out),
-                                                     %The match binds every
-                                                     %elaborated output first;
-                                                     %functional constraints
-                                                     %then run on those bound
-                                                     %values before the body.
+                                                     %Elaborated outputs are bound
+                                                     %first, then functional
+                                                     %constraints, then the body.
                                                      append([GsH, G1,
                                                              [match(S, RuntimePattern,
                                                                     Out, Out)],
@@ -1158,16 +1085,14 @@ nonfunction_type(K) :- nonvar(K), ( primitive_type(K)
                                   ; is_list(K), \+ is_arrow_type(K) ).
 
 %A variable head with a known arrow type of matching arity is a closure call:
-%check the args against the arrow, dispatch through apply_fn (skipping reduce's
-%per-call bookkeeping), and propagate the output type. Applying a parameter
-%whose type is still an unbound assumption tells us it is a function.
+%check the args against the arrow, dispatch through apply_fn, and propagate
+%the output type. Applying a parameter whose type is an unbound assumption
+%tells us it is a function.
 translate_closure_call(HV, AVs, Inner, Goals, Out) :- var(HV), AVs \== [], known_singleton(HV, K),
                                                       length(AVs, N), N1 is N + 1,
-                                                      %The arrow shape is a GUESS when K is unbound. On an
-                                                      %inference assumption it is a good one and gets
-                                                      %recorded; on a variable the declaration promised to
-                                                      %callers it must not be, so the shape stays local and
-                                                      %the result is honestly unknown (param_promise_var/1):
+                                                      %An unbound K makes the arrow shape a guess: recorded
+                                                      %on an inference assumption, kept local on a promised
+                                                      %variable (param_promise_var/1):
                                                       ( var(K) -> length(Xs, N1),
                                                                   ( param_promise_var(K) -> Guessed = true
                                                                                           ; K = [->|Xs], Guessed = false )
@@ -1203,10 +1128,8 @@ closure_apply_goal(HV, [A, B], Out, apply_fn2(HV, A, B, Out)) :- !.
 closure_apply_goal(HV, [A, B, C], Out, apply_fn3(HV, A, B, C, Out)) :- !.
 closure_apply_goal(HV, AVs, Out, apply_fnN(HV, AVs, Out)).
 
-%Runtime closure application; the last clause preserves reduce/2 semantics for
-%values (including unbound heads used symbolically) that are not callable.
-%A missing predicate (e.g. an arity the arrow type did not predict) fails like
-%it always did - errors raised inside the callee propagate:
+%Runtime closure application; the last clause keeps reduce/2 semantics for
+%values that are not callable. Errors raised inside the callee propagate:
 apply_fn1(F, A, Out) :- atom(F), fun(F), !, safe_apply(call(F, A, Out)).
 apply_fn1(P, A, Out) :- compound(P), P = partial(F, Bs), !,
                         append(Bs, [A, Out], CallArgs),
@@ -1295,12 +1218,10 @@ translate_typed_call(Fun, Bound, Args, GsH, Goals, Out) :-
           build_call_or_partial(Fun, AVs, Out, Inner, [], Goals),
           ( untyped_call_out(Fun, AVs, Out) -> true ; true ) ).
 
-%Most calls retain ordinary bottom-up argument translation. Narrowly, at a
-%uniquely declared call site, provided closure arguments first resolve shared
-%type variables in that declaration. A remaining product/list argument can
-%then receive contextual construction typing. This is closure-driven
-%resolution, not general inference; the later apply_call_args call remains the
-%single enforcement site for every argument. Goal order remains source order.
+%At a uniquely declared call site, closure arguments first resolve shared type
+%variables in the declaration, so a remaining product/list argument can get
+%contextual construction typing. apply_call_args stays the single enforcement
+%site, and goal order stays source order.
 translate_typed_args(_, [ft(ATs, _)], Args, EffTs, Goals, Values) :-
         length(ATs, NDecl), length(Args, NProv), NB is NDecl - NProv, NB >= 0,
         length(BoundTs, NB), append(BoundTs, DeclTs, ATs),
@@ -1341,13 +1262,10 @@ translate_contextual_args([pending(A, ET, DT)|Ss], [G|Gs], [V|Vs]) :-
            ; translate_expr(A, G, V) ),
         translate_contextual_args(Ss, Gs, Vs).
 
-%A contextual data/list/cons producer is sometimes staged in an earlier let*
-%binding. By the time its consumer call is translated, contextual translation
-%of the binder is too late. Look ahead only through the remaining let/let*
-%spine for any uniquely declared call using this exact binder. Resolve its
-%other declared closure positions from source callable declarations, including
-%partial applications, and translate the producer under the resulting
-%expectation. This lookup uses its own fresh declaration copy.
+%A contextual producer may be staged in an earlier let* binding, too early for
+%its consumer call. Look ahead through the remaining let/let* spine for a
+%uniquely declared call using this exact binder and translate the producer
+%under the expectation it implies (a fresh declaration copy).
 translate_let_value(Pat, Val, In, Goals, V) :-
         nonvar(Val), Val = [Ctor|_],
         ( Ctor == data ; Ctor == 'make-list' ; Ctor == cons ),
@@ -1421,10 +1339,8 @@ eff_arg_type(FullDecls, I, T) :- ( forall(member(ft(ATs, _), FullDecls),
                                    -> T = 'Atom' ; true ).
 
 %Atom-typed args stay unevaluated data, except underapplied callable
-%expressions representable as a goal-free closure. Only expressions that can
-%actually become a closure are translated, so plain data is never re-translated:
-%brand is a checker construct, not data - it erases here too, branding the
-%inner value as knowledge (use quote to pass a literal (brand ...) form):
+%expressions representable as a goal-free closure. brand is a checker construct
+%and erases here too (quote passes a literal (brand ...) form):
 expression_arg_value(A, AV) :- nonvar(A), A = [B, TypeExpr, Inner], B == brand, !,
                                expression_arg_value(Inner, AV),
                                normalize_type(TypeExpr, TN),
@@ -1558,11 +1474,9 @@ translate_pattern(X, X) :- atomic(X), !.
 translate_pattern([H|T], [P|Ps]) :- !, translate_pattern(H, P),
                                        translate_pattern(T, Ps).
 
-% Constructs the goal for a single branch of an if-then-else/case.
-% A branch whose result variable carries no type knowledge is aliased straight
-% onto the shared Out, which would otherwise let it inherit an EARLIER
-% branch's candidates and vanish from the merge. Its ignorance is recorded
-% first (see note_unknown_candidate/1) so the merged variable stays honest:
+% Constructs the goal for one branch of an if-then-else/case. An untyped
+% branch value aliased onto the shared Out would inherit an earlier branch's
+% candidates, so its ignorance is recorded first (note_unknown_candidate/1):
 build_branch(true, Val, Out, (Out = Val)) :- !, note_candidates(Out, Val).
 build_branch(Con, Val, Out, Goal) :- var(Val) -> ( known_candidates(Val, _) -> true
                                                                              ; Unknown = yes ),
@@ -1573,11 +1487,10 @@ build_branch(Con, Val, Out, Goal) :- var(Val) -> ( known_candidates(Val, _) -> t
                                                ; note_candidates(Out, Val),
                                                  Goal = (Val = Out, Con).
 
-% Edge-scoped translation restores every source variable after compiling one
-% arm.  Do not alias a variable-valued arm onto the shared result at compile
-% time: that would make restoring the source variable erase the joined result's
-% type.  Transfer its candidates now and keep the value equality in the emitted
-% branch goal instead.
+% Edge-scoped translation restores every source variable after an arm, so a
+% variable-valued arm is not aliased onto the result at compile time (restoring
+% it would erase the joined type): transfer its candidates and emit the
+% equality instead.
 build_isolated_branch(Con, Val, Out, Goal) :-
     ( var(Val), current_unified_source_variable(Val)
       -> join_isolated_branch_candidates(Out, Val),
@@ -1585,12 +1498,9 @@ build_isolated_branch(Con, Val, Out, Goal) :-
          ; Goal = (Con, Out = Val) )
     ; build_branch(Con, Val, Out, Goal) ).
 
-% `note_candidates/2` is a binding-flow operation: when Out currently has one
-% open candidate it specializes that candidate to the incoming type.  An if
-% join is a choice-flow operation instead.  Route the incoming candidates
-% through a fresh attributed carrier so tknown's ordinary unification hook
-% takes their variant union, exactly as build_branch/4 did when it could alias
-% the branch value directly, without aliasing the edge-scoped source variable.
+% An if join is a choice flow, not a binding flow (note_candidates/2 would
+% specialize Out's open candidate): route the candidates through a fresh
+% carrier so tknown's unification hook takes their variant union.
 join_isolated_branch_candidates(Out, Val) :-
     ( var(Out)
       -> ( var(Val), known_candidates(Val, Candidates)
@@ -1599,11 +1509,8 @@ join_isolated_branch_candidates(Out, Val) :-
          Carrier = Out
     ; true ).
 
-%Translate case expression recursively into nested if. The branches are
-%compiled to a nested if-then-else, so case is first-match/COMMITTED: a value
-%matched by an earlier branch never reaches a later one. Prior carries the
-%earlier branches' patterns (source order) so the typechecker may use that
-%exclusion when narrowing a union - see narrowing_sound/4.
+%Translate case into a nested if-then-else, so case is first-match: Prior
+%carries the earlier branches' patterns for union narrowing (narrowing_sound/4).
 translate_case(Pairs, Kv, Expectation, Out, Goal, KGo) :-
         translate_case(Pairs, Kv, Expectation, Out, Goal, KGo, []).
 
@@ -1619,10 +1526,8 @@ translate_case([[K,VExpr]|Rs], Kv, Expectation, Out, Goal, KGo, Prior) :-
                                                                     Goal = ((Kv = Kc) -> Then ; Next) ),
                                                       append([Gc,KGi], KGo).
 
-%Case scrutinees are not limited to variables. A constructed positional tuple
-%whose fields carry known types has a structural product type through the same
-%value-typing relation used elsewhere; bind deep patterns against that product
-%rather than falling back to constructor-only field typing.
+%A constructed positional tuple with known field types has a structural product
+%type; bind deep patterns against it rather than constructor-only field typing.
 case_scrutinee_value_type(Kv, KT) :-
     ( var(Kv) -> known_singleton(Kv, KT0)
               ; value_single_type(Kv, KT0) ),
@@ -1635,12 +1540,9 @@ translate_args([X|Xs], Goals, [V|Vs]) :- translate_expr(X, G1, V),
                                          translate_args(Xs, G2, Vs),
                                          append(G1, G2, Goals).
 
-%foldall's result type is the accumulator function's output type when that is
-%uniquely declared or inferred. The initial value's type is deliberately NOT
-%used as a fallback: the result comes from the accumulator function, and the
-%init only surfaces when the generator is empty.
-%foldall returns Init when the generator is empty, so the accumulator's
-%output type is only trustworthy when the initial value fits it too:
+%foldall's result is the accumulator function's uniquely declared or inferred
+%output type, trusted only when the initial value (returned for an empty
+%generator) fits it too:
 foldall_out_type(AFV, Init, Out) :- ( atom(AFV),
                                       findall(OT, ( fn_decl_arity(AFV, 2, _, OT)
                                                   ; inferred_decl_arity(AFV, 2, _, OT) ), [OT1]),
@@ -1650,10 +1552,8 @@ foldall_out_type(AFV, Init, Out) :- ( atom(AFV),
                                       -> set_out_type(Out, OT1)
                                        ; true ).
 
-%known_candidates_certain/2 refuses a candidate set containing the unknown
-%marker: one alternative of undetermined type makes the whole element type
-%unknown, and a (List T) claim over it would be exactly the certification the
-%unknown alternative can break:
+%A candidate set with the unknown marker leaves the element type unknown, so no
+%(List T) claim is made over it:
 collapse_elem_type(EV, ET, Known) :- ( var(EV), known_candidates_certain(EV, Cs)
                                        -> ( Cs = [C1] -> ET = C1 ; ET = ['|'|Cs] ),
                                           Known = true

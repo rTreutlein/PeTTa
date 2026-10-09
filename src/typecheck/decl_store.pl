@@ -1,12 +1,5 @@
-%%% Canonical declaration storage and declaration lifecycle.
-%
-% Owns: every function/value/type declaration store, declaration provenance and
-% library origin, add/remove/cache/renormalize operations, and fresh-copy lookup
-% views.
-% Consumes: arrow/type normalization, mutation notification, source-loading
-% provenance helpers, and translator recompilation entry points.
-% Boundary: all declaration mutation enters through maybe_cache_type_decl/2,
-% maybe_uncache_type_decl/2, or forget_symbol_types/1.
+%%% Declaration storage and lifecycle. All declaration mutation enters through
+%%% maybe_cache_type_decl/2, maybe_uncache_type_decl/2 or forget_symbol_types/1.
 
 :- thread_local loading_origin/1.
 :- thread_local declaration_provenance/1.
@@ -19,7 +12,7 @@
 :- dynamic declared_space_type/2.   % declared_space_type(Name, RowType)
 :- discontiguous maybe_cache_type_decl/2.
 
-%%% Canonical function-declaration record.
+%%% Function-declaration record:
 %
 % fn_decl(F, Arity, scheme(ArgTypes, OutType), Effect, Origin, Provenance)
 %
@@ -27,11 +20,8 @@
 %   Top       = det | semidet | nondet | unspecified | variable(Name)
 %   Variables = [] | [effect_var(Name, [closure_arg(Index, Arity), ...])]
 %
-% Provenance keeps both the source location and original syntax. The syntax is
-% load-bearing lifecycle information: it lets late alias addition/removal
-% renormalize this one store without reconstructing declarations from parallel
-% effect/origin tables. Effect metadata itself is closed and contains no Prolog
-% variables.
+% Provenance keeps the source location and original syntax, so late alias
+% addition/removal can renormalize this store in place.
 
 fn_decl_copy(F, N, Scheme, Effect, Origin, Provenance) :-
     fn_decl(F, N, S0, E0, Origin, P0),
@@ -78,9 +68,7 @@ current_fn_decl_provenance(Type, provenance(Location, syntax(Type))) :-
       -> Location = source(File, unknown)
     ; Location = unknown ).
 
-%The only two predicates that write the canonical store. Every cache,
-%renormalization, origin change, removal and forget path is expressed through
-%this pair.
+%The only two predicates that write the function-declaration store:
 add_fn_decl_record(fn_decl(F, N, Scheme, Effect, Origin, Provenance), Added) :-
     ( fn_decl(F, N, S2, E2, _, _), (S2-E2) =@= (Scheme-Effect)
       -> Added = false
@@ -294,11 +282,9 @@ existing_space_row(Name, Row) :-
     catch(clause(Head, true), _, fail),
     Head =.. [Name|Row].
 
-%A declaration-driven graph revalidation is transactional with respect to the
-%canonical declaration state.  The raw source atom inserted by runtime
-%add-atom remains outside this bounded transaction (MeTTa has no catchable
-%mutation exception boundary yet), but executable clauses, declarations,
-%origins and inferred types are restored together.
+%A declaration-driven graph revalidation is transactional over the declaration
+%state: executable clauses, declarations, origins and inferred types are
+%restored together. The raw source atom of a runtime add-atom stays outside it.
 with_fn_decl_transaction(Name, Goal) :-
     with_decl_transaction(Name, Goal).
 
@@ -351,10 +337,9 @@ restore_decl_transaction(Name,
           forall(member(A, Foreigns), assertz(declared_foreign_type(Name, A))),
           retractall(declared_space_type(Name, _)),
           forall(member(T, Spaces), assertz(declared_space_type(Name, T))) )),
-    %Consumers may already have reacted to an origin flip before the staged
-    %declaration failed. Re-run those exact graph edges under the restored
-    %state; retain the original validation error if rollback revalidation
-    %itself reports anything.
+    %Consumers may have reacted to the origin flip before the staged
+    %declaration failed: re-run those edges under the restored state, keeping
+    %the original validation error.
     catch(decl_notify(declaration_changed(origin, Name, changed)), _, true),
     forall(member(N, Arities),
            catch(decl_notify(declaration_changed(Name/N, changed)), _, true)),
@@ -389,10 +374,9 @@ decl_notify(Event) :-
 
 :- meta_predicate with_decl_notifications_batched(0).
 
-% Function declarations are hoisted as one file-level prepass.  Consumers
-% should therefore be rebuilt against that final declaration set, not once for
-% every intermediate prefix of it.  Nested batching contributes to the outer
-% queue; the outermost scope restores notification mode before flushing.
+% Function declarations are hoisted as one file-level prepass, so consumers are
+% rebuilt once against the final set, not once per prefix. Nested batching
+% feeds the outer queue.
 with_decl_notifications_batched(Goal) :-
     ( catch(nb_getval('$batched_decl_notifications', Existing), _, fail),
       is_list(Existing)
@@ -568,12 +552,9 @@ forbidden_effect_parameter_occurrence(T) :-
       -> member(E, Rest), effect_var_occurrence(E, _)
     ; effect_var_occurrence(T, _) ).
 
-%Strict determinism is an explicit-effect mode: every arrow in a function
-%declaration, including arrows nested in parameter/output positions (and
-%aliases expanded into those positions), must name its cardinality. The
-%standard builtin signature file is checker-internal type metadata; builtin
-%determinism comes authoritatively from builtin_registry.pl, so that one load path
-%is exempt instead of duplicating hundreds of table annotations.
+%Under --strict-det every arrow in a function declaration, including nested
+%and alias-expanded ones, must name its cardinality. The builtin signature
+%file is exempt: builtin determinism comes from builtin_registry.pl.
 require_explicit_det_arrows(Name, Type) :-
     ( strict_det(true), \+ builtin_signature_load,
       normalize_type(Type, Normalized),
@@ -593,10 +574,9 @@ builtin_signature_load :-
     atomic_list_concat([Base, '/lib_builtin_types.metta'], BuiltinFile),
     catch(same_file(File, BuiltinFile), _, fail).
 
-%Arrow declarations are pre-cached before source-ordered Alias declarations
-%exist. When the declaration is processed in place, remove its syntax-only
-%prepass copy if normalize_type/2 expanded an alias; otherwise that stale
-%opaque overload would leak the alias name into the checker.
+%Arrow declarations are pre-cached before source-ordered aliases exist; when
+%the declaration is processed in place and an alias expanded, remove the stale
+%syntax-only prepass copy:
 remove_unexpanded_fn_precache(Name, ATs, OT, Det, ATN, OTN) :-
     maplist(normalize_type(syntax), ATs, RawATs),
     normalize_type(syntax, OT, RawOT),
@@ -608,11 +588,9 @@ remove_unexpanded_fn_precache(Name, ATs, OT, Det, ATN, OTN) :-
       -> true
     ; true ).
 
-%%% A fresh alias may arrive after declarations already cached its name as an
-%%% opaque atom. Rebuild every declaration store that contains that exact atom
-%%% in source order, now that normalize_type/2 can erase it. Only functions
-%%% whose arrow entries changed need recompilation; determinism metadata is
-%%% keyed by function name and arity, neither of which changes here.
+%%% A fresh alias may arrive after declarations cached its name as an opaque
+%%% atom: rebuild, in source order, every store containing that atom. Only
+%%% functions whose arrow entries changed are recompiled.
 renormalize_late_alias(Name, Fs) :-
     self_type_declarations(All),
     dependent_type_names(All, [Name], Names),

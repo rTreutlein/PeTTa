@@ -19,17 +19,10 @@
             validate_builtin_implementation_coverage/0
           ]).
 
-%%% Declarative registry for language-visible builtins and compiler forms.
-%
-% One record owns the cross-cutting metadata that used to be repeated in the
-% signature file, determinism table, contextual output rules and translator.
-% Procedural implementations remain in their subject files; the registry names
-% their hooks and the load-time validator below proves every named hook exists.
-%
-% Owns builtin_spec/6, its consumer views, explicit exemptions, and registry
-% consistency validation. Consumes named hook predicates, declaration views,
-% and runtime builtin registration through explicitly qualified user-module
-% callbacks. This leaf is a real SWI-Prolog module; it owns no checker stores.
+%%% Declarative registry for language-visible builtins and compiler forms: one
+%%% record per builtin carries its signature, determinism, contextual output
+%%% rule and lowering. Procedural implementations stay in their subject files;
+%%% the load-time validator below proves every named hook exists.
 %
 % builtin_spec(
 %     Name/MeTTaArity,
@@ -43,9 +36,18 @@
 %                 unspecified),
 %     lowering(generic|special(Hook))).
 %
-% `variadic` is used instead of an integer only for compiler forms whose source
-% arity is open. Type variables in signature records are ordinary fresh Prolog
-% variables; no binding is shared between registry lookups.
+% `variadic` marks compiler forms whose source arity is open. Type variables in
+% signature records are fresh per lookup.
+%
+% Cardinality is the only determinism knowledge the checker has about a
+% builtin, and an unlisted one is `unspecified`. An entry describes the
+% predicate (N MeTTa arguments plus the result) under the weakest calling
+% convention: any argument may be unbound or ill-typed (the residual guard
+% accepts an unbound variable), so a (List T) position may hold an open list,
+% and the result may already be bound. An exception is not a solution: det is
+% exactly one solution for every instantiation, semidet at most one. Relational
+% modes are real (append/3 inverts, length/2 enumerates shapes, bool/1
+% enumerates), so such builtins are not det.
 
 % Arithmetic and numeric comparisons.
 builtin_spec('+'/2, implementation(metta), typing(signature(unspecified, ['Number','Number'], 'Number')), evaluation(eager), cardinality(fixed(det)), lowering(special(arithmetic_native))).
@@ -252,9 +254,8 @@ builtin_spec(the/2, implementation(compiler), typing(untyped), evaluation(specia
 builtin_spec(quote/1, implementation(compiler), typing(untyped), evaluation(special), cardinality(compiler_derived), lowering(special(quote))).
 builtin_spec(catch/1, implementation(compiler), typing(untyped), evaluation(special), cardinality(compiler_derived), lowering(special(catch))).
 
-% Explicit exemptions from registration completeness. These names are kept in
-% register_fun's compatibility list but do not implement the MeTTa
-% N-arguments-plus-result convention.
+% Exemptions from registration completeness: names in register_fun's list that
+% do not implement the N-arguments-plus-result convention.
 builtin_registration_exemption(concat, legacy_name_without_predicate).
 builtin_registration_exemption('get-mettatype', legacy_name_without_predicate).
 builtin_registration_exemption('mm2-exec', optional_mork_runtime).

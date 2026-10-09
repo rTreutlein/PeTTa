@@ -1,14 +1,6 @@
-%%% Compiled-analysis dependency graph %%%
-%
-% Proof producers return dependencies; this file is the only publication and
-% mutation boundary.  A compiled clause is keyed by its real Prolog clause
-% reference, so removal and specialization invalidation cannot leave a live
-% edge.  Whole-function queries are derived by unioning those clause records.
-%
-% Owns compiled/validation dependency stores and notify_mutation/1. Consumes
-% proof-cache invalidation, canonical declaration queries, translator
-% recompile/specialization interfaces, and subject-specific revalidators.
-% Boundary: no other unit asserts the stores below.
+%%% Compiled-analysis dependency graph: the only publication and mutation
+%%% boundary for proof dependencies. A compiled clause is keyed by its real
+%%% clause reference, so removal and specialization cannot leave a live edge.
 
 :- dynamic compiled_deps/4.     % compiled_deps(ClauseRef, F/N, SourceFile, Dependencies)
 :- dynamic compiled_dep_edge/3. % compiled_dep_edge(Dependency, ClauseRef, F/N)
@@ -113,12 +105,10 @@ notify_mutation_queue(Events, State0, State) :-
     maplist(invalidate_mutation_event, MoreEvents),
     notify_mutation_queue(MoreEvents, State2, State).
 
-% Recompilation does not change MeTTa source clauses, but every rebuilt
-% function publishes a derived clause-set event which wakes its callers.  Walk
-% that reverse-dependency cascade before compiling anything so the unified
-% checker can solve the union once.  The real queue below still recompiles in
-% its established order and emits every notification immediately; this plan is
-% used only to size the ephemeral analysis scope.
+% Every rebuilt function publishes a derived clause-set event that wakes its
+% callers. Walk that cascade before compiling so the unified checker can solve
+% the union once; the queue below still recompiles in its own order and emits
+% every notification immediately.
 planned_recompile_functions(Events, State0, Functions) :-
     planned_recompile_functions_(Events, State0, [], Reversed),
     reverse(Reversed, Functions).
@@ -171,20 +161,18 @@ affected_compiled_functions_all(Events, Functions) :-
 pending_recompile_functions(Functions, graph_state(Visited, _), Pending) :-
     subtract(Functions, Visited, Pending).
 
-%A source-load clause has already been validated against the file's complete
-%prepass, and a derived event names the function the graph just rebuilt.  A
-%runtime add/remove, however, must rebuild the changed function itself too:
-%boundness provisos and commitment checks are clause-set unions whose emitted
-%checks live in every clause.
+%A source-load clause was validated against the file's complete prepass, and
+%a derived event names a function the graph just rebuilt. A runtime add/remove
+%must rebuild the changed function itself too, because boundness provisos and
+%commitment checks are clause-set unions emitted into every clause.
 mutation_seed_functions(clause_changed(F/_, prevalidated), [F]) :- !.
 mutation_seed_functions(clause_changed(F/_, derived), [F]) :- !.
 mutation_seed_functions(_, []).
 
-%The per-file prepass already made every definition and pending body in that
-%same file visible. Recompiling its earlier clauses after each later clause is
-%both redundant and observably different once specializations exist. A source
-%clause still wakes consumers compiled in older files, which is the former
-%late-symbol lifecycle.
+%The per-file prepass already made every definition in the same file visible,
+%and recompiling earlier clauses after each later one is redundant and
+%observably different once specializations exist. A source clause still wakes
+%consumers compiled in older files.
 mutation_consumer_file_relevant(clause_changed(_, prevalidated), File) :- !,
     current_metta_file(Current),
     File \== Current.

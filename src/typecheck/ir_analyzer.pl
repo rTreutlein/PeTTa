@@ -249,10 +249,8 @@ analyze_node(opaque(Id, quote(Payload), []), State0, _, Out) :- !,
     trace_node(Out0, Id, Out).
 analyze_node(opaque(Id, Tag, _Children), State0, _Ctx, Out) :-
     % An unsupported form's children are syntax, not an evaluation-order
-    % promise.  In particular a lambda body must not refine variables in the
-    % enclosing sequence merely because it occurs below |->.  Keep the input
-    % state unchanged and model only the opaque operation itself; a later IR
-    % extension for Tag can replace this clause with its real control flow.
+    % promise (a lambda body below |-> must not refine the enclosing
+    % sequence), so the input state passes through unchanged.
     Out0 = out(yes, Id, card(0,many), State0, [opaque], [],
                [unsupported(Tag)], []),
     trace_node(Out0, Id, Out).
@@ -939,11 +937,9 @@ consistent_flow(State, Flow) :-
     ( inconsistent_state(State) -> Flow = unreachable
     ; Flow = reachable(State) ).
 
-% add_facts_flow/4 receives an already-consistent reachable state and changes
-% only one immutable value entry.  Therefore only that entry can become newly
-% contradictory; rescanning every prior ID after each fact insertion made
-% consistency quadratic in long clauses.  Whole-state checks remain at input,
-% joins and alias operations.
+% The input state is consistent and only one value entry changed, so only that
+% entry can become contradictory; whole-state checks happen at input, joins
+% and alias operations.
 consistent_value_flow(State, Id, Flow) :-
     ( inconsistent_value(State, Id) -> Flow = unreachable
     ; Flow = reachable(State) ).
@@ -1016,10 +1012,8 @@ alias_ids(State0, A, B, State) :-
     alias_one_way(State0, A, B, State1),
     alias_one_way(State1, B, A, State).
 
-% Runtime identity does not erase nominal views of the same value.  A branded
-% Proof can be identical to the Atom from which it was branded, so propagating
-% type facts across == spuriously widens/narrows legacy types.  Unification
-% retains full aliasing; identity shares only value/shape facts.
+% A branded Proof can be identical to the Atom it was branded from, so ==
+% shares only value/shape facts, not type facts; unification shares both.
 alias_ids_without_types(State0, A, B, State) :-
     alias_one_way_without_types(State0, A, B, State1),
     alias_one_way_without_types(State1, B, A, State).
