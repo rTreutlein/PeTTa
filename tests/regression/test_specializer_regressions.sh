@@ -53,19 +53,14 @@ if grep -Eq 'app_Spec_\[partial\(lambda_1,\[_[0-9]+\]\)\]' "$log"; then
 fi
 grep -Fq 'app_Spec_[partial(lambda_1,[_])]' "$log" || { echo "repro4 missing normalized specialization key"; cat "$log"; exit 1; }
 
-# Higher-order specialization must preserve reduce's exception handling.
-# Both generic and specialized invocation should produce the same result.
+# Higher-order specialization must preserve the generic call's exception
+# behavior: whether the callee is chosen at runtime or specialized at compile
+# time, its exception reaches the outer catch.
 log=$(run_ok repro6 tests/regression/repro6_higher_order_exception_handler.metta)
 
-count=$(grep -c '^()$' "$log" || true)
+count=$(grep -c 'evaluation_error zero_divisor' "$log" || true)
 [ "$count" -eq 2 ] || {
-    echo "repro6 expected 2 empty results, got $count"
-    cat "$log"
-    exit 1
-}
-
-if grep -q 'evaluation_error zero_divisor' "$log"; then
-    echo "repro6 specialization bypassed exception handling"
+    echo "repro6 expected the callee's error from both calls, got $count"
     cat "$log"
     exit 1
 }
