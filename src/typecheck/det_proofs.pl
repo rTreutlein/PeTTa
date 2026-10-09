@@ -305,9 +305,7 @@ selection_expression_certificate(Expr, nonvar) :-
 %value unchanged; they may safely forward shape evidence without treating
 %their source syntax as runtime structure.
 selection_value_preserving_wrapper(Expr, Inner) :-
-    nonvar(Expr), Expr = [the, _, Inner].
-selection_value_preserving_wrapper(Expr, Inner) :-
-    nonvar(Expr), Expr = [brand, _, Inner].
+    nonvar(Expr), Expr = [W, _, Inner], ( W == the ; W == brand ).
 
 %Literal/data spines belong to manifest evidence, not to this evaluated-output
 %path.  Name the two intrinsic producers explicitly; every other accepted
@@ -624,13 +622,20 @@ manifest_bool([F|As]) :- atom(F), is_list(As), length(As, N),
 
 %A bound is-member probe: a ground literal, or an enforced-bound direct param
 %(any type - only boundness matters, since the probe is a test operand):
-is_member_probe_bound(P) :- ground(P), !.
+is_member_probe_bound(P) :- ground_data(P), !.
 is_member_probe_bound(P) :- var(P), enforced_bound_param(P).
 
-%A manifest proper list that is fully ground and duplicate-free. sort/2 dedups
-%and orders; equal length to msort/2 (which keeps duplicates) means no dup:
-manifest_ground_dupfree_list(L) :- manifest_proper_list(L), ground(L),
+%A ground literal list that is duplicate-free. sort/2 dedups and orders; equal
+%length to msort/2 (which keeps duplicates) means no dup:
+manifest_ground_dupfree_list(L) :- is_list(L), ground_data(L),
                                    sort(L, S), msort(L, M), length(S, K), length(M, K).
+
+%A ground term that translation keeps as data all the way down, so its runtime
+%value is the source term itself. A call anywhere inside breaks that: (f),
+%(cons 1 (1)) and (1 (f)) can all evaluate to a list with a duplicate, and
+%(f) can evaluate to an unbound probe.
+ground_data(X) :- atomic(X), !.
+ground_data(X) :- compound(X), selection_transparent_actual(X), maplist(ground_data, X).
 
 %%% FEATURE 2 - output-properness certificate %%%
 %
@@ -746,7 +751,7 @@ output_result_qualifies_core(bound_bool, Body, Stack, Verdict, Dependencies) :-
 clause_result_bool_core(Body, _, yes, []) :-
     ( Body == true ; Body == false ), !.
 clause_result_bool_core(Body, Stack, Verdict, Dependencies) :-
-    nonvar(Body), Body = [F|Args], bool_logic_builtin(F), !,
+    nonvar(Body), Body = [F|Args], atom(F), bool_logic_builtin(F), !,
     cert_bool_args(Args, Stack, Verdict, Dependencies).
 clause_result_bool_core(Body, _, yes, [effect(F/N), decl(F/N)]) :-
     nonvar(Body), Body = [F|Args], atom(F), is_list(Args), length(Args, N),
@@ -790,7 +795,7 @@ cert_bool_args([A|As], Stack, Verdict, Dependencies) :-
 
 cert_bool_value(A, _, yes, []) :- ( A == true ; A == false ), !.
 cert_bool_value(A, Stack, Verdict, Dependencies) :-
-    nonvar(A), A = [F|Args], bool_logic_builtin(F), !,
+    nonvar(A), A = [F|Args], atom(F), bool_logic_builtin(F), !,
     cert_bool_args(Args, Stack, Verdict, Dependencies).
 cert_bool_value(A, _, yes, [effect(F/N), decl(F/N)]) :-
     nonvar(A), A = [F|Args], atom(F), is_list(Args), length(Args, N),
