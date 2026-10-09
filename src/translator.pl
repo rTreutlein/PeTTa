@@ -131,7 +131,8 @@ translate_clause_core(Input, (Head :- BodyConj), ConstrainArgs) :-
                                                                          ; parametric_param_check(F, ParamVars) ),
                                                (  nonvar(ExpOut) , ExpOut = partial(Base,Bound)
                                                -> arity(Base, Arity), length(Bound, N), M is (Arity - N) - 1,
-                                                  length(ExtraArgs, M), append([Bound,ExtraArgs,[Out]],CallArgs), Goal =.. [Base|CallArgs],
+                                                  length(ExtraArgs, M), append(Bound, ExtraArgs, CallInArgs),
+                                                  resolve_memoization(Base, CallInArgs, Out, Goal),
                                                   append(GoalsBody,[Goal],FinalGoals), append(Args1,ExtraArgs,HeadArgs),
                                                   OutChecks = [],
                                                   end_clause_inference(F, Args1, none, none, SavedInf)
