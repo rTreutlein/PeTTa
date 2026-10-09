@@ -88,7 +88,7 @@ inferred_selection_statuses(F, N, Args, Metas, Statuses, Det) :-
     ; YN =:= 0, PN =:= 1,
       single_possible_domain_covered(Args, Metas, Statuses)
       -> Det = det
-    ; keyed_selection_position(Args, Metas, Idx, Keys),
+    ; keyed_head_column(Metas, Idx, Keys),
       nth0(Idx, Args, Arg),
       selection_argument_bound(Arg, BoundKind)
       -> ( selection_column_covers(F, N, Args, Idx, Keys, BoundKind)
@@ -146,10 +146,11 @@ total_selection_heads(F, N, Metas) :-
     keyed_head_column(Metas, Idx, Keys),
     all_other_head_positions_unconstrained(Metas, Idx),
     selection_function_arg_type(F, N, Idx, T),
-    selection_domain_keys(T, Domain0),
-    sort(Domain0, Domain),
-    sort(Keys, Domain).
+    keys_cover_domain(T, Keys).
 
+%A key column gives a unique clause selector only when every clause exposes a
+%key there and no key is repeated. Repeated/nested discriminators stay
+%conservative because a merely nonvar boundary does not ground their fields.
 keyed_head_column(Metas, Idx, Keys) :-
     Metas = [First|_],
     First = fun_meta(Args, _, _),
@@ -246,30 +247,17 @@ transformed_cons_pattern(P, H, T) :-
 transformed_cons_pattern(P, H, T) :-
     nonvar(P), P = [H|T], var(T).
 
-%A key column gives a unique clause selector only when every clause exposes a
-%key there and no key is repeated. Repeated/nested discriminators stay
-%conservative because a merely nonvar boundary does not ground their fields.
-keyed_selection_position(Args, Metas, Idx, Keys) :-
-    nth0(Idx, Args, _),
-    findall(P, (member(Meta, Metas),
-                Meta = fun_meta(HArgs, _, _),
-                nth0(Idx, HArgs, P)), Col),
-    Col \== [],
-    maplist(selection_pattern_key, Col, Keys),
-    sort(Keys, Unique),
-    same_length(Keys, Unique),
-    maplist(selection_pattern_covers_key, Col).
-
+%A known selector type is selection evidence only for a direct parameter of
+%the enclosing committed clause (enforced_proper_list_param/1,
+%enforced_bound_param/1), where consuming it publishes a runtime boundary
+%proviso. A local's or a nested head field's List/Bool type does not bind it.
 selection_argument_bound(A, proper_list) :-
     var(A), scoped_proper_list_var(A), !.
 selection_argument_bound(A, proper_list) :-
-    var(A), selection_argument_list_type(A),
-    typed_selection_evidence(A, proper_list), !.
+    var(A), known_singleton(A, T), nonvar(T), list_type(T, _),
+    enforced_proper_list_param(A), !.
 selection_argument_bound(A, proper_list) :-
     var(A), enforced_recursive_proper_list_value(A), !.
-selection_argument_bound(A, nonvar) :-
-    var(A), known_singleton(A, T), nonvar(T),
-    typed_selection_evidence(A, nonvar), !.
 selection_argument_bound(A, nonvar) :-
     var(A), enforced_bound_param(A), !.
 selection_argument_bound(A, proper_list) :-
@@ -316,40 +304,23 @@ emit_selection_certificate_dependencies([Dependency|Dependencies]) :-
     analysis_emit(dependency(Dependency)),
     emit_selection_certificate_dependencies(Dependencies).
 
-%A known selector type is selection evidence only for a direct parameter of
-%the enclosing committed clause, where consuming it publishes a runtime
-%boundary proviso. A local's or a nested head field's List/Bool type does not
-%bind it; those qualify only through the certificate paths above.
-typed_selection_evidence(A, proper_list) :-
-    det_direct_param(A),
-    enforced_proper_list_param(A).
-typed_selection_evidence(A, nonvar) :-
-    det_direct_param(A),
-    enforced_bound_param(A).
-
 selection_column_covers(_, _, _, _, Keys, proper_list) :-
     sort([list_empty, list_cons], Domain),
     sort(Keys, Domain).
 selection_column_covers(F, N, Args, Idx, Keys, _) :-
     selection_argument_type(F, N, Args, Idx, T),
-    selection_domain_keys(T, Domain0),
+    keys_cover_domain(T, Keys).
+
+keys_cover_domain(T, Keys) :-
+    domain_keys(T, [], Domain0),
     sort(Domain0, Domain),
     sort(Keys, Domain).
-
-selection_argument_list_type(A) :-
-    known_singleton(A, T), nonvar(T), list_type(T, _), !.
-selection_argument_list_type(A) :-
-    nonvar(A), manifest_proper_list(A).
 
 selection_argument_type(_, _, Args, Idx, T) :-
     nth0(Idx, Args, A), known_singleton(A, T0), nonvar(T0), !, T = T0.
 selection_argument_type(F, N, _, Idx, T) :-
     unique_fn_decl(F, N, ATs, _),
     nth0(Idx, ATs, T).
-
-selection_domain_keys('Bool', [key(true, 0), key(false, 0)]) :- !.
-selection_domain_keys(T, Keys) :-
-    domain_keys(T, [], Keys).
 
 %The registry owns WHICH builtins have argument-sensitive cardinality. This
 %file owns only the irreducibly procedural meaning of each named rule.

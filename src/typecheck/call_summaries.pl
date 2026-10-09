@@ -1,8 +1,5 @@
 :- module(call_summaries,
-          [ builtin_mode/6,
-            mode_applicable/3,
-            select_builtin_mode/6,
-            post_fact/3,
+          [ select_builtin_mode/6,
             validate_summary_table/0
           ]).
 
@@ -291,12 +288,6 @@ select_builtin_mode(F, N, HasFact, Posts, Card, Effects) :-
     keysort(Applicable, Sorted),
     last(Sorted, _-mode(_, Posts, Card, Effects)).
 
-%!  post_fact(+Posts, +Target, -Fact) is nondet.
-%
-%   Project facts ensured for result or arg(Index).
-post_fact(Posts, Target, Fact) :-
-    member(ensure(Target, Fact), Posts).
-
 %!  validate_summary_table is det.
 %
 %   Check row shape, known facts/effects, valid cardinalities and deterministic
@@ -454,7 +445,7 @@ test(bool_specific_mode_outranks_fallback) :-
     select_builtin_mode(and, 2, has_proper_bool, Posts, Card, Effects),
     assertion(Card == card(1, 1)),
     assertion(Effects == [pure]),
-    assertion(post_fact(Posts, result, proper_bool)).
+    assertion(memberchk(ensure(result, proper_bool), Posts)).
 
 test(bool_fallback_without_facts) :-
     select_builtin_mode(and, 2, has_none, _, Card, _),
@@ -473,7 +464,7 @@ test(is_member_guarded_mode) :-
     select_builtin_mode('is-member', 2, has_ground_unique_membership,
                         Posts, Card, _),
     assertion(Card == card(1, 1)),
-    assertion(post_fact(Posts, result, proper_bool)).
+    assertion(memberchk(ensure(result, proper_bool), Posts)).
 
 test(is_member_non_ground_nonvar_probe_is_not_det) :-
     select_builtin_mode('is-member', 2, has_nonground_probe_unique_list,
@@ -518,20 +509,20 @@ test(is_member_singleton_literal_is_det_for_unbound_probe) :-
 test(cons_improper_tail_does_not_claim_expression) :-
     select_builtin_mode(cons, 2, has_none, Posts, Card, _),
     assertion(Card == card(1, 1)),
-    assertion(\+ post_fact(Posts, result, expr)),
-    assertion(post_fact(Posts, result, nonvar)).
+    assertion(\+ memberchk(ensure(result, expr), Posts)),
+    assertion(memberchk(ensure(result, nonvar), Posts)).
 
 test(decons_fallback_is_semidet) :-
     select_builtin_mode(decons, 1, has_none, Posts, Card, _),
     assertion(Card == card(0, 1)),
-    assertion(post_fact(Posts, result, proper_list)),
-    assertion(post_fact(Posts, result, nonempty_list)),
-    assertion(post_fact(Posts, result, proper_list_length(2))).
+    assertion(memberchk(ensure(result, proper_list), Posts)),
+    assertion(memberchk(ensure(result, nonempty_list), Posts)),
+    assertion(memberchk(ensure(result, proper_list_length(2)), Posts)).
 
 test(decons_nonempty_mode_is_det_and_exact_pair) :-
     select_builtin_mode(decons, 1, has_nonempty, Posts, Card, _),
     assertion(Card == card(1, 1)),
-    assertion(post_fact(Posts, result, proper_list_length(2))).
+    assertion(memberchk(ensure(result, proper_list_length(2)), Posts)).
 
 test(unknown_builtin_has_no_summary, [fail]) :-
     select_builtin_mode('__missing__', 0, has_none, _, _, _).

@@ -245,7 +245,7 @@ maybe_cache_type_decl(Space, Term) :- ( Space == '&self', is_list(Term), Term = 
                                         -> ( nonvar(Type), infix_arrow_misuse(Type)
                                              -> throw(error(infix_arrow_syntax(Name, Type), typecheck))
                                            ; nonvar(Type), fn_type_shape(Type, ATs, OT, Det)
-                                              -> with_fn_decl_transaction(
+                                              -> with_decl_transaction(
                                                      Name,
                                                      ( prepare_decl_origin(Name, Type, Origin),
                                                        current_fn_decl_provenance(Type, Provenance),
@@ -285,9 +285,6 @@ existing_space_row(Name, Row) :-
 %A declaration-driven graph revalidation is transactional over the declaration
 %state: executable clauses, declarations, origins and inferred types are
 %restored together. The raw source atom of a runtime add-atom stays outside it.
-with_fn_decl_transaction(Name, Goal) :-
-    with_decl_transaction(Name, Goal).
-
 with_decl_transaction(Name, Goal) :-
     snapshot_decl_transaction(Name, Snapshot),
     catch(( Goal -> true
@@ -366,8 +363,7 @@ cache_fn_type_decl(Name, Type, ATs, OT, Det, Origin, Provenance) :-
 decl_notify(_) :-
     catch(b_getval('$suppress_decl_notifications', true), _, fail), !.
 decl_notify(Event) :-
-    catch(nb_getval('$batched_decl_notifications', Events0), _, fail),
-    is_list(Events0), !,
+    nb_current('$batched_decl_notifications', Events0), !,
     nb_setval('$batched_decl_notifications', [Event|Events0]).
 decl_notify(Event) :-
     notify_mutation(Event).
@@ -378,33 +374,19 @@ decl_notify(Event) :-
 % rebuilt once against the final set, not once per prefix. Nested batching
 % feeds the outer queue.
 with_decl_notifications_batched(Goal) :-
-    ( catch(nb_getval('$batched_decl_notifications', Existing), _, fail),
-      is_list(Existing)
+    ( nb_current('$batched_decl_notifications', _)
       -> call(Goal)
     ; setup_call_cleanup(
-          push_decl_notification_batch(Saved),
+          nb_setval('$batched_decl_notifications', []),
           call(Goal),
-          pop_and_flush_decl_notification_batch(Saved)) ).
+          flush_decl_notification_batch) ).
 
-push_decl_notification_batch(saved(yes, Previous)) :-
-    catch(nb_getval('$batched_decl_notifications', Previous), _, fail), !,
-    nb_setval('$batched_decl_notifications', []).
-push_decl_notification_batch(saved(no, none)) :-
-    nb_setval('$batched_decl_notifications', []).
-
-pop_and_flush_decl_notification_batch(Saved) :-
-    ( catch(nb_getval('$batched_decl_notifications', Reversed), _, fail)
-      -> true
-    ; Reversed = [] ),
-    restore_decl_notification_batch(Saved),
+flush_decl_notification_batch :-
+    nb_getval('$batched_decl_notifications', Reversed),
+    nb_delete('$batched_decl_notifications'),
     reverse(Reversed, Ordered),
     list_to_set(Ordered, Events),
     notify_mutations(Events).
-
-restore_decl_notification_batch(saved(yes, Previous)) :- !,
-    nb_setval('$batched_decl_notifications', Previous).
-restore_decl_notification_batch(_) :-
-    catch(nb_delete('$batched_decl_notifications'), _, true).
 
 with_decl_notifications_suppressed(Goal) :-
     catch(b_getval('$suppress_decl_notifications', Saved), _, Saved = false),
@@ -420,15 +402,11 @@ notify_symbol_constructor_sets(Name) :-
            decl_notify(constructor_set_changed(T, Name))).
 notify_symbol_constructor_sets(_).
 
+%Name is a constructor or constant of T, so declaring or removing it changes
+%the ctor_set(T) the dependency graph tracks:
 symbol_enters_constructor_set(Name, T) :-
-    once(new_ctor_key(Name, T, _)).
-
-%Bridge declaration mutation to the dependency graph's ctor_set(Type) events.
-new_ctor_key(Name, T, K) :- member_ctor(T, K, Name).
-new_ctor_key(Name, T, 0) :-
-    declared_value_type(Name, T2),
-    T = T2,
-    \+ fun(Name).
+    ( member_ctor(T, _, Name) -> true
+    ; declared_value_type(Name, T), \+ fun(Name) ).
 
 %Origin is deliberately symbol-level: one user declaration opts the whole
 %callable back into conservative guards, including all of its overloads. A
@@ -487,13 +465,10 @@ warn_user_library_redeclaration(Name, Type, Library) :-
              [Name, Library, Location, Type]) ).
 
 library_decl_location(Name, Text) :-
-    fn_decl(Name, _, _, _, library(_), provenance(Location, _)), !,
-    provenance_location_text(Location, Text).
-library_decl_location(_, '').
-
-provenance_location_text(source(File, Line), Text) :-
-    format(atom(Text), " at ~w:~w", [File, Line]).
-provenance_location_text(_, '').
+    ( once(fn_decl(Name, _, _, _, library(_), provenance(Location, _))),
+      Location = source(File, Line)
+      -> format(atom(Text), " at ~w:~w", [File, Line])
+    ; Text = '' ).
 
 cached_declaration_matches(Name, Type) :-
     nonvar(Type), fn_type_shape(Type, ATs, OT, Det), !,
@@ -596,10 +571,10 @@ renormalize_late_alias(Name, Fs) :-
     dependent_type_names(All, [Name], Names),
     include(declaration_mentions_any(Names), All, Rebuilt),
     renormalize_alias_fn_decls(Name, Fs),
-    renormalize_alias_value_decls(Name),
-    renormalize_alias_space_decls(Name),
+    renormalize_alias_store(Name, declared_value_type),
+    renormalize_alias_store(Name, declared_space_type),
     renormalize_alias_alias_decls(Name),
-    renormalize_alias_newtype_decls(Name),
+    renormalize_alias_store(Name, declared_newtype),
     notify_rebuilt_declarations(Rebuilt).
 
 type_term_mentions_alias(T, Name) :- sub_term(S, T), S == Name, !.
@@ -627,24 +602,18 @@ reassert_alias_fn_decl(Name, Old) :-
          replace_fn_decl_record(Old, New)
     ; true ).
 
-renormalize_alias_value_decls(Name) :-
-    findall(value(V, T), declared_value_type(V, T), Ds),
-    ( member(value(_, T0), Ds), type_term_mentions_alias(T0, Name)
-      -> retractall(declared_value_type(_, _)),
-         forall(member(value(V, T), Ds),
-                ( ( type_term_mentions_alias(T, Name) -> normalize_type(T, TN) ; TN = T ),
-                  ( declared_value_type(V, T2), T2 =@= TN -> true
-                  ; assertz(declared_value_type(V, TN)) ) ))
-    ; true ).
-
-renormalize_alias_space_decls(Name) :-
-    findall(space(S, T), declared_space_type(S, T), Ds),
-    ( member(space(_, T0), Ds), type_term_mentions_alias(T0, Name)
-      -> retractall(declared_space_type(_, _)),
-         forall(member(space(S, T), Ds),
-                ( ( type_term_mentions_alias(T, Name) -> normalize_type(T, TN) ; TN = T ),
-                  ( declared_space_type(S, T2), T2 =@= TN -> true
-                  ; assertz(declared_space_type(S, TN)) ) ))
+%Renormalize the Name(Key, Type) store entries that mention the alias Name:
+renormalize_alias_store(Name, Store) :-
+    Entry =.. [Store, K, T],
+    findall(K-T, Entry, Ds),
+    ( member(_-T0, Ds), type_term_mentions_alias(T0, Name)
+      -> Any =.. [Store, _, _],
+         retractall(Any),
+         forall(member(K1-T1, Ds),
+                ( ( type_term_mentions_alias(T1, Name) -> normalize_type(T1, TN) ; TN = T1 ),
+                  Existing =.. [Store, K1, T2],
+                  ( call(Existing), T2 =@= TN -> true
+                  ; New =.. [Store, K1, TN], assertz(New) ) ))
     ; true ).
 
 renormalize_alias_alias_decls(Name) :-
@@ -655,16 +624,6 @@ renormalize_alias_alias_decls(Name) :-
                 ( ( A \== Name, type_term_mentions_alias(T, Name)
                     -> normalize_type(T, TN) ; TN = T ),
                   assertz(declared_type_alias(A, TN)) ))
-    ; true ).
-
-renormalize_alias_newtype_decls(Name) :-
-    findall(newtype(N, T), declared_newtype(N, T), Ds),
-    ( member(newtype(_, T0), Ds), type_term_mentions_alias(T0, Name)
-      -> retractall(declared_newtype(_, _)),
-         forall(member(newtype(N, T), Ds),
-                ( ( type_term_mentions_alias(T, Name) -> normalize_type(T, TN) ; TN = T ),
-                  ( declared_newtype(N, T2), T2 =@= TN -> true
-                  ; assertz(declared_newtype(N, TN)) ) ))
     ; true ).
 
 %Declaration prepass: only function (arrow) declarations are hoisted, so
