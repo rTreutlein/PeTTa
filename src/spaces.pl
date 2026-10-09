@@ -215,6 +215,16 @@ runtime_add_clause_ref(_, _, _).
     typed_space_runtime_value_ok(Space, Term),
     remove_sexp(Space, Term).
 
+%Updates whose row the translator proved against the space's declared schema
+%(typed_space_update_goal/4). A function atom keeps its own clause.
+'add-atom-proven'(Space, Term, true) :- Term = [=,_,_], !,
+                                        'add-atom'(Space, Term, true).
+'add-atom-proven'(Space, Term, true) :- add_sexp(Space, Term).
+
+'remove-atom-proven'(Space, Term, Removed) :- Term = [=,_,_], !,
+                                              'remove-atom'(Space, Term, Removed).
+'remove-atom-proven'(Space, Term, true) :- remove_sexp(Space, Term).
+
 %Typed spaces accept open payloads and removal patterns.  At the operation
 %boundary reject only a value that has become a definite contradiction; this
 %is the runtime counterpart of translator.pl's check_typed_space_value/2, not
