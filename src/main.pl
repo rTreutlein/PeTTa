@@ -98,7 +98,7 @@ main :- current_prolog_flag(argv, RawArgs),
         ( Args = [] -> prolog_interop_example
         ; Args = [mork] -> prolog_interop_example,
                            mork_test
-        ; leading_metta_files(Args, Files), Files = [First|_]
+        ; metta_files(Args, Files), Files = [First|_]
           -> file_directory_name(First, Dir),
              assertz(working_dir(Dir)),
              maplist(load_metta_file, Files, ResultsList),
@@ -115,6 +115,11 @@ main :- current_prolog_flag(argv, RawArgs),
 % be exercised by a multi-file program (see examples/soundness/ and Phase D of
 % examples/soundness_matrix.sh). Leading arguments ending in .metta are files;
 % everything from the first non-file argument on is flags.
+% Without a leading .metta argument the first argument is the one file to load,
+% whatever its extension, as before several files could be named.
+metta_files(Args, Files) :- leading_metta_files(Args, Files), Files = [_|_], !.
+metta_files([File|_], [File]).
+
 leading_metta_files([A|As], [A|Fs]) :- atom(A), file_name_extension(_, metta, A), !,
                                        leading_metta_files(As, Fs).
 leading_metta_files(_, []).
