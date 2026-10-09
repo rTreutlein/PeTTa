@@ -305,9 +305,7 @@ selection_expression_certificate(Expr, nonvar) :-
 %value unchanged; they may safely forward shape evidence without treating
 %their source syntax as runtime structure.
 selection_value_preserving_wrapper(Expr, Inner) :-
-    nonvar(Expr), Expr = [the, _, Inner].
-selection_value_preserving_wrapper(Expr, Inner) :-
-    nonvar(Expr), Expr = [brand, _, Inner].
+    nonvar(Expr), Expr = [W, _, Inner], ( W == the ; W == brand ).
 
 %Literal/data spines belong to manifest evidence, not to this evaluated-output
 %path.  Name the two intrinsic producers explicitly; every other accepted
@@ -746,7 +744,7 @@ output_result_qualifies_core(bound_bool, Body, Stack, Verdict, Dependencies) :-
 clause_result_bool_core(Body, _, yes, []) :-
     ( Body == true ; Body == false ), !.
 clause_result_bool_core(Body, Stack, Verdict, Dependencies) :-
-    nonvar(Body), Body = [F|Args], bool_logic_builtin(F), !,
+    nonvar(Body), Body = [F|Args], atom(F), bool_logic_builtin(F), !,
     cert_bool_args(Args, Stack, Verdict, Dependencies).
 clause_result_bool_core(Body, _, yes, [effect(F/N), decl(F/N)]) :-
     nonvar(Body), Body = [F|Args], atom(F), is_list(Args), length(Args, N),
@@ -790,7 +788,7 @@ cert_bool_args([A|As], Stack, Verdict, Dependencies) :-
 
 cert_bool_value(A, _, yes, []) :- ( A == true ; A == false ), !.
 cert_bool_value(A, Stack, Verdict, Dependencies) :-
-    nonvar(A), A = [F|Args], bool_logic_builtin(F), !,
+    nonvar(A), A = [F|Args], atom(F), bool_logic_builtin(F), !,
     cert_bool_args(Args, Stack, Verdict, Dependencies).
 cert_bool_value(A, _, yes, [effect(F/N), decl(F/N)]) :-
     nonvar(A), A = [F|Args], atom(F), is_list(Args), length(Args, N),
