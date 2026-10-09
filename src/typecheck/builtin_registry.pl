@@ -215,6 +215,7 @@ builtin_spec(eval/1, implementation(metta), typing(untyped), evaluation(special)
 builtin_spec(reduce/1, implementation(external), typing(untyped), evaluation(special), cardinality(unspecified), lowering(special(dynamic_reduce))).
 builtin_spec('import!'/2, implementation(metta), typing(untyped), evaluation(eager), cardinality(unspecified), lowering(generic)).
 builtin_spec('library-import!'/2, implementation(metta), typing(untyped), evaluation(eager), cardinality(unspecified), lowering(generic)).
+builtin_spec('cached-import!'/2, implementation(metta), typing(untyped), evaluation(eager), cardinality(unspecified), lowering(generic)).
 builtin_spec(library/1, implementation(metta), typing(untyped), evaluation(eager), cardinality(unspecified), lowering(generic)).
 builtin_spec(library/2, implementation(metta), typing(untyped), evaluation(eager), cardinality(unspecified), lowering(generic)).
 builtin_spec(sread/1, implementation(parser), typing(untyped), evaluation(eager), cardinality(unspecified), lowering(generic)).
