@@ -1,7 +1,9 @@
 python/__pycache__
+examples/__pycache__
 python/HE/__pycache__
 python/tests/__pycache__
 python/petta/__pycache__
+lib/__pycache__
 __pycache__/
 *.py[cod]
 
@@ -9,3 +11,6 @@ __pycache__/
 build/
 dist/
 *.egg-info/
+
+# git-import! clone target
+repos/

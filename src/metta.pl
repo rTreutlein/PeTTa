@@ -36,8 +36,9 @@ library_source_exists(Path) :- file_name_extension(Path, metta, MettaPath),
 :- use_module(library(process)).
 :- use_module(library(filesex)).
 :- current_prolog_flag(argv, Argv),
-  ( member(mork, Argv) -> ensure_loaded([ext_points, parser, translator, specializer, filereader, '../mork_ffi/morkspaces', spaces])
-                        ; ensure_loaded([ext_points, parser, translator, specializer, filereader, spaces])).
+   ( member(mork, Argv) -> ensure_loaded([ext_points, parser, typecheck, translator, specializer, filereader, '../mork_ffi/morkspaces', spaces])
+                         ; ensure_loaded([ext_points, parser, typecheck, translator, specializer, filereader, spaces])).
+:- seed_builtin_types.
 
 %%%%%%%%%% Standard Library for MeTTa %%%%%%%%%%
 
@@ -61,8 +62,18 @@ parse(Str, R) :- sread(Str, R).
 '!='(A,B,R) :- (A==B -> R=false ; R=true).
 '='(A,B,R) :-  (A=B -> R=true ; R=false).
 '=?'(A,B,R) :- (\+ \+ A=B -> R=true ; R=false).
-'=alpha'(A,B,R) :- (A =@= B -> R=true ; R=false).
-'=@='(A,B,R) :- (A =@= B -> R=true ; R=false).
+%Raw =@= success already implies attribute-free variance - identical
+%attributes still correspond after stripping - so it accepts at C speed
+%without copying. A raw failure is final unless checker attributes are
+%present on either side; only that rare case pays for the stripping copies.
+attribute_free_variant(A, B) :-
+    ( A =@= B -> true
+    ; ( term_attvars(A, [_|_]) -> true ; term_attvars(B, [_|_]) )
+      -> copy_term_nat(A, AC), copy_term_nat(B, BC), AC =@= BC
+    ; fail ).
+
+'=alpha'(A,B,R) :- (attribute_free_variant(A, B) -> R=true ; R=false).
+'=@='(A,B,R) :- (attribute_free_variant(A, B) -> R=true ; R=false).
 '<='(A,B,R) :- (A =< B -> R=true ; R=false).
 '>='(A,B,R) :- (A >= B -> R=true ; R=false).
 '@<='(A,B,R) :- (A @=< B -> R=true ; R=false).
@@ -147,7 +158,7 @@ alpha_list_to_set(List, Set) :-
 
 alpha_list_to_set_assoc([], _, []).
 alpha_list_to_set_assoc([H|T], SeenIn, R) :-
-    copy_term(H, HCopy),
+    copy_term_nat(H, HCopy),
     numbervars(HCopy, 0, _),
     term_hash(HCopy, Key),
     ( get_assoc(Key, SeenIn, _) ->
@@ -167,6 +178,12 @@ non_list(X) :- compound(X), X \= [_|_].
 'size-atom'(List, Size) :- non_list(List), !, Size = [].
 'size-atom'(List, Size) :- length(List, Size).
 'car-atom'([H|_], H) :- !.
+%An empty expression has no head, and answering () here instead of raising
+%would be a WRONG answer, not a failure: the typechecker certifies this
+%result as the argument's element type (list_elem_out_type/2), so a quiet ()
+%would arrive where a Number was proven. Raising keeps the certification
+%sound and the det verdict too - an exception is not a solution:
+'car-atom'([], _) :- !, throw(error(car_atom_empty, 'car-atom')).
 'car-atom'(_, []).
 'cdr-atom'([_|T], T) :- !.
 'cdr-atom'(_, []).
@@ -236,11 +253,11 @@ get_type_candidate(X, T) :- match('&self', [':',X,T], T, _).
 'readln!'(Out) :- read_line_to_string(user_input, Str),
                   sread(Str, Out).
 
-test(A,B,true) :- (A =@= B -> E = '✅' ; E = '❌'),
+test(A,B,true) :- (attribute_free_variant(A, B) -> E = '✅' ; E = '❌'),
                   swrite(A, RA),
                   swrite(B, RB),
                   format("is ~w, should ~w. ~w ~n", [RA, RB, E]),
-                  (A =@= B -> true ; halt(1)).
+                  (attribute_free_variant(A, B) -> true ; halt(1)).
 
 assert(Goal, true) :- ( call(Goal) -> true
                                     ; swrite(Goal, RG),
@@ -310,7 +327,12 @@ call_goals([G|Gs]) :- call(G),
 
 %%% Prolog interop: %%%
 argv(K, Arg) :- current_prolog_flag(argv, Argv), nth0(K, Argv, A), ( atom_number(A, N) -> Arg = N ; Arg = A ).
-import_prolog_function(N, true) :- register_fun(N).
+import_prolog_function(N, true) :-
+    ( fun(N) -> WasCallable = true ; WasCallable = false ),
+    register_fun(N),
+    ( WasCallable == false
+      -> notify_mutation(callable_changed(N))
+    ; true ).
 'Predicate'([F|Args], Term) :- Term =.. [F|Args].
 callPredicate(G, true) :- call(G).
 assertzPredicate(G, true) :- assertz(G).
@@ -321,6 +343,14 @@ retractPredicate(_, false).
 %%% Library / Import: %%%
 ensure_metta_ext(Path, Path) :- file_name_extension(_, metta, Path), !.
 ensure_metta_ext(Path, PathWithExt) :- file_name_extension(Path, metta, PathWithExt).
+
+%The translator preserves the source-level distinction between
+%(import! ... (library Name)) and a plain pathname by rewriting only the
+%former to this helper.
+'library-import!'(Space, Name, true) :-
+    with_library_origin(Name,
+                        ( library(Name, File),
+                          importer_helper(Space, File) )).
 
 current_working_dir(Base) :- working_dir(Base), !.
 current_working_dir(Base) :- absolute_file_name('.', Base, [file_type(directory)]).
@@ -418,6 +448,10 @@ register_fun(N) :- assertz(fun(N)),
                           'pow-math', 'sqrt-math', 'sort-atom','abs-math', 'log-math', 'trunc-math', 'ceil-math',
                           'floor-math', 'round-math', 'sin-math', 'cos-math', 'tan-math', 'asin-math','random-int','random-float',
                           'acos-math', 'atan-math', 'isnan-math', 'isinf-math', 'min-atom', 'max-atom',
-                          'foldl-atom', 'map-atom', 'filter-atom','current-time','format-time', library, exists_file,
+                          'foldl-atom', 'map-atom', 'filter-atom','current-time','format-time', library, exists_file, 'library-import!',
                           import_prolog_function, 'Predicate', callPredicate, assertaPredicate, assertzPredicate, retractPredicate,
                           'add-translator-rule!', 'remove-translator-rule!', argv]).
+
+%Fail startup immediately when any of the independently implemented builtin
+%views drifts from the declarative registry.
+:- validate_builtin_registry.
