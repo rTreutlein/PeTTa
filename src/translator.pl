@@ -4,7 +4,6 @@
 %head elaboration emitted executable goals; such a head is not represented by
 %the normalized argument patterns alone and therefore cannot support
 %selection or coverage proofs.
-fun_meta_parts(fun_meta(Args, Body), Args, Body, clean).
 fun_meta_parts(fun_meta(Args, Body, HeadForm), Args, Body, HeadForm).
 
 fun_meta_head_goals(Meta) :-
@@ -35,15 +34,9 @@ functional_pattern_application([F|Args], F, Args) :-
     atom(F), F \== cons, fun(F),
     is_list(Args).
 
-%Flatten (= Head Body) MeTTa function into a Prolog clause.  The four-argument
-%boundary returns the dependencies observed by all nested analyses; assertion
-%sites attach them to the real clause reference with
-%record_compiled_dependencies/3.  The established two/three-argument entries
-%remain thin compatibility views.
-translate_clause(Input, Clause) :-
-        translate_clause(Input, Clause, true, _).
-translate_clause(Input, Clause, ConstrainArgs) :-
-        translate_clause(Input, Clause, ConstrainArgs, _).
+%Flatten (= Head Body) MeTTa function into a Prolog clause. Dependencies are
+%those observed by all nested analyses; assertion sites attach them to the real
+%clause reference with record_compiled_dependencies/3.
 translate_clause(Input, Clause, ConstrainArgs, Dependencies) :-
         Input = [=, [F|Args], BodyExpr],
         atom(F),

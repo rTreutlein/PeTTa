@@ -5,18 +5,16 @@
             with_unified_recompile_analysis/2,
             with_unified_edge_facts/3,
             with_unified_preanalyzed_form/1,
-            current_unified_clause_analysis/5,
             current_unified_source_variable/1,
             unified_builtin_call_card/2,
             unified_function_result_fact/3,
-            unified_function_summary/6,
             unified_checker_invalidate_event/1
           ]).
 
-/** <module> Sole adapter between the unified analyzer and legacy compilation
+/** <module> Sole adapter between the unified analyzer and the translator
 
 This module may query PeTTa's canonical declaration/function stores and may
-project already-computed edge facts into the old code generator.  It must not
+project already-computed edge facts into the code generator.  It must not
 contain a second recursive source checker.  All control-flow, cardinality and
 result-shape decisions come from `ir_analyzer` records.
 */
@@ -278,8 +276,6 @@ unified_function_result_fact(F, N, Fact) :-
     member(Stored, Facts),
     Stored =@= Fact, !.
 
-% Compatibility view retained for legacy certificate consumers.  The cache
-% owns its rows and never exposes clause records or attributed variables.
 unified_function_summary(F, N, Card, Facts, Effects, Diagnostics) :-
     unified_summary_cache_lookup(
         F, N,
@@ -313,7 +309,6 @@ record_nested_scope_mutation(Event) :-
 record_nested_scope_mutation(_).
 
 
-
 % -- Batch solve ---------------------------------------------------------
 
 pending_clause_sources(ParsedForms, Pending) :-
@@ -329,16 +324,13 @@ pending_clause_sources_([parsed(function, _, _, Term)|Forms], Pending) :- !,
 pending_clause_sources_([_|Forms], Pending) :-
     pending_clause_sources_(Forms, Pending).
 
-solve_file_analysis(Pending, Summaries, ClauseRecords) :-
-    solve_file_analysis(Pending, Summaries, ClauseRecords, _).
-
 solve_file_analysis(Pending, Summaries, ClauseRecords, CacheEntries) :-
     touched_keys(Pending, Keys),
     maplist(invalidate_pending_summary, Keys),
     clause_universe(Keys, Pending, ClauseSources),
     prepare_clause_universe(ClauseSources, Clauses),
     initial_touched_summaries(Keys, Initial),
-    solve_fixed_point(Clauses, Keys, Initial, 0, Solved, ClauseResults),
+    solve_fixed_point(Clauses, Keys, Initial, Solved, ClauseResults),
     include(summary_for_keys(Keys), Solved, Summaries),
     clause_records_from_results(Pending, ClauseResults, ClauseRecords),
     summary_cache_entries(Summaries, Clauses, CacheEntries).
@@ -359,14 +351,9 @@ clause_universe(Keys, Pending, Clauses) :-
 % summaries.  Reusing that solver's records after a mutation is unsound, while
 % analyzing the consumer alone loses result-shape facts from unchanged callees.
 % Build a fresh, invocation-local fixed point over the target's direct-call
-% transitive closure in the clauses which are executable now.  Mutual recursion
-% is naturally retained because closure is computed before solve_fixed_point/5.
-% The target is added when it is a not-yet-stored pending clause following a
-% mutation in the same source batch.  Nothing from this computation is asserted
-% into unified_function_summary/6.
-current_stored_summaries(Source, Summaries) :-
-    current_stored_summaries(Source, Summaries, _).
-
+% transitive closure in the clauses which are executable now.  The target is
+% added when it is a not-yet-stored pending clause following a mutation in the
+% same source batch.
 current_stored_summaries(Source, Summaries, ClauseResults) :-
     source_clause_key(Source, F/N),
     solve_current_source_closure(
@@ -386,7 +373,7 @@ solve_source_closure(RootSources, Sources, Summaries, ClauseResults,
     prepare_cached_source_closure(
         RootSources, Sources, Relevant, Keys),
     initial_touched_summaries(Keys, Initial),
-    solve_fixed_point(Relevant, Keys, Initial, 0, Summaries, ClauseResults).
+    solve_fixed_point(Relevant, Keys, Initial, Summaries, ClauseResults).
 
 prepare_cached_source_closure(RootSources, Universe, Prepared, Keys) :-
     source_keys(RootSources, RootKeys),
@@ -461,27 +448,6 @@ ensure_sources_in_universe([clause_source(F, N, Source)|Roots], Stored,
 
 clause_source_for_key(F/N, Source, clause_source(F, N, Source)).
 
-reachable_prepared_keys(Roots, Prepared, Keys) :-
-    findall(F/N, member(prepared_clause(F, N, _, _), Prepared), Available0),
-    sort(Available0, Available),
-    include(key_in(Available), Roots, Seeds0),
-    sort(Seeds0, Seeds),
-    reachable_prepared_keys_(Seeds, Prepared, Available, Keys).
-
-reachable_prepared_keys_(Current, Prepared, Available, Keys) :-
-    findall(Callee,
-            ( member(Owner, Current),
-              member(Clause, Prepared),
-              prepared_clause_key(Clause, Owner),
-              prepared_clause_call_key(Clause, Callee),
-              memberchk(Callee, Available) ),
-            Called),
-    append(Current, Called, Expanded0),
-    sort(Expanded0, Expanded),
-    ( Expanded == Current
-      -> Keys = Current
-    ; reachable_prepared_keys_(Expanded, Prepared, Available, Keys) ).
-
 prepared_clause_key(prepared_clause(F, N, _, _), F/N).
 
 prepared_clause_call_key(
@@ -492,8 +458,6 @@ prepared_clause_call_key(
 prepared_for_keys(Keys, Clause) :-
     prepared_clause_key(Clause, Key),
     memberchk(Key, Keys).
-
-key_in(Keys, Key) :- memberchk(Key, Keys).
 
 prepare_clause_universe([], []).
 prepare_clause_universe([clause_source(F, N, Source)|Sources],
@@ -516,16 +480,9 @@ initial_touched_summaries([F/N|Keys],
 % that need iteration: acyclic components are analyzed once, callee first.  A
 % recursive component uses a key worklist, so a changed summary reanalyzes only
 % its callers rather than every clause in the SCC.
-solve_fixed_point(Clauses, Keys, Current, _, Solved) :-
-    solve_fixed_point(Clauses, Keys, Current, 0, Solved, _).
-
-solve_fixed_point(Clauses, Keys, Current, _, Solved, ClauseResults) :-
+solve_fixed_point(Clauses, Keys, Current, Solved, ClauseResults) :-
     solve_fixed_point_counted(
         Clauses, Keys, Current, Solved, ClauseResults, _).
-
-solve_fixed_point_counted(Clauses, Keys, Current, Solved, AnalysisCount) :-
-    solve_fixed_point_counted(
-        Clauses, Keys, Current, Solved, _, AnalysisCount).
 
 solve_fixed_point_counted(Clauses, Keys, Current, Solved, ClauseResults,
                           AnalysisCount) :-
@@ -828,12 +785,6 @@ clause_result_for_source([clause_result(_, _, Stored, Outcome)|_], Source,
 clause_result_for_source([_|Results], Source, Outcome) :-
     clause_result_for_source(Results, Source, Outcome).
 
-prepared_for_source([prepared_clause(_, _, Stored, Lowered)|_], Source,
-                    Lowered) :-
-    Stored == Source, !.
-prepared_for_source([_|Clauses], Source, Lowered) :-
-    prepared_for_source(Clauses, Source, Lowered).
-
 try_lower_source_clause(Source, Outcome) :-
     catch(( lower_clause_with_origins(Source, IR, _, Env, Origins)
             -> Outcome = lowered(IR, Env, Origins)
@@ -848,7 +799,6 @@ unsupported_lowering_error(error(domain_error(Domain, _), Context),
 unsupported_lowering_error(Error, _) :- throw(Error).
 
 lowering_error_context(lower_expr/4).
-lowering_error_context(relational_ir:lower_expr/4).
 
 analyze_prepared_clause(unsupported(Reason), _, unsupported(Reason)) :- !.
 analyze_prepared_clause(lowered(IR, Env, Origins), Summaries, Outcome) :-
@@ -952,9 +902,6 @@ replace_key_summaries(Keys, Current, Derived, Next) :-
 
 summary_for_keys(Keys, function_summary(F, N, _, _, _, _)) :-
     memberchk(F/N, Keys).
-
-summaries_equivalent(A, B) :- A =@= B.
-
 
 % -- Closed summary cache boundary --------------------------------------
 
@@ -1424,8 +1371,8 @@ test(variant_clauses_keep_occurrence_identity) :-
                clause_source(duplicate_identity, 1, Second)],
     clause_universe([duplicate_identity/1], Pending, Universe),
     prepare_clause_universe(Universe, Prepared),
-    prepared_for_source(Prepared, First, _),
-    prepared_for_source(Prepared, Second, _),
+    once(( member(prepared_clause(_, _, S1, _), Prepared), S1 == First )),
+    once(( member(prepared_clause(_, _, S2, _), Prepared), S2 == Second )),
     length(Prepared, 2),
     X \== Y.
 
@@ -1447,26 +1394,11 @@ test(variant_record_is_aligned_to_recompiled_source) :-
     X \== SourceX,
     Y \== SourceY.
 
-test(recompile_summary_universe_is_transitive_and_scc_complete) :-
-    Sources = [
-        clause_source(recompile_consumer, 0,
-                      [=, [recompile_consumer], [recompile_producer]]),
-        clause_source(recompile_producer, 0,
-                      [=, [recompile_producer], [recompile_consumer]]),
-        clause_source(recompile_unrelated, 0,
-                      [=, [recompile_unrelated], true])
-    ],
-    prepare_clause_universe(Sources, Prepared),
-    reachable_prepared_keys([recompile_consumer/0], Prepared, Keys),
-    assertion(memberchk(recompile_consumer/0, Keys)),
-    assertion(memberchk(recompile_producer/0, Keys)),
-    assertion(\+ memberchk(recompile_unrelated/0, Keys)).
-
 test(recompile_closure_stops_at_cached_callee,
      [setup((unified_summary_cache_reset,
-             unified_summary_cache_store(
+             unified_summary_cache_store_many([cache_entry(
                  function_summary(cache_stop_leaf, 0, card(1,1),
-                                  [proper_bool], [], []), []))),
+                                  [proper_bool], [], []), [])]))),
       cleanup(unified_summary_cache_reset)]) :-
     Root = clause_source(cache_stop_root, 0,
                          [=, [cache_stop_root], [cache_stop_mid]]),
@@ -1726,7 +1658,7 @@ gfp_test_solve(Sources, Summaries, Results) :-
     prepare_clause_universe(Sources, Prepared),
     source_keys(Sources, Keys),
     initial_touched_summaries(Keys, Initial),
-    solve_fixed_point(Prepared, Keys, Initial, 0, Summaries, Results).
+    solve_fixed_point(Prepared, Keys, Initial, Summaries, Results).
 
 gfp_test_summary_has_fact(F/N, Summaries, Fact) :-
     summary_for_key(
@@ -1886,13 +1818,13 @@ test(constructor_resolver_refuses_genuine_same_arity_ambiguity,
 
 test(semantic_mutation_clears_transitive_summary_cache,
      [setup((unified_summary_cache_reset,
-             unified_summary_cache_store(
+             unified_summary_cache_store_many([cache_entry(
                  function_summary(test_callee, 0, card(1,1),
-                                  [proper_bool], [], []), []),
-             unified_summary_cache_store(
+                                  [proper_bool], [], []), [])]),
+             unified_summary_cache_store_many([cache_entry(
                  function_summary(test_caller, 0, card(1,1),
                                   [proper_bool], [], []),
-                 [summary(test_callee/0)]))),
+                 [summary(test_callee/0)])]))),
       cleanup(unified_summary_cache_reset)]) :-
     unified_checker_invalidate_event(clause_changed(test_callee/0, runtime)),
     \+ unified_checker_bridge:unified_function_summary(
@@ -1902,9 +1834,9 @@ test(semantic_mutation_clears_transitive_summary_cache,
 
 test(scoped_summary_shadows_persistent_facts,
      [setup((unified_summary_cache_reset,
-             unified_summary_cache_store(
+             unified_summary_cache_store_many([cache_entry(
                  function_summary(shadowed, 0, card(1,1),
-                                  [proper_bool], [], []), []))),
+                                  [proper_bool], [], []), [])]))),
       cleanup(unified_summary_cache_reset)]) :-
     current_bridge_generation(Generation),
     Record = clause_record(scope_test, scope_ir, [], [], scope_analysis),

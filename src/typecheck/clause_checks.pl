@@ -408,7 +408,6 @@ union_member_excluded(M, N, Prior) :- atom(M), !,
         ; K is N - 1,
           analysis_emit(dependency(ctor_set(M))),
           forall(member_ctor(M, K, C), prior_consumed_ctor(Prior, C, K)) ).
-union_member_excluded(_, _, _) :- fail.
 
 union_members_excluded([], _, _).
 union_members_excluded([M|Ms], N, Prior) :-

@@ -37,10 +37,6 @@ remove_sexp(Space, [Rel|Args]) :- Term =.. [Space, Rel | Args],
                                  nb_setval('$runtime_add_raw_ref', none),
                                  nb_setval('$runtime_add_clause_ref', none).
 
-runtime_add_function(Space, Term, FAtom, W, RawRef, ClauseRef) :-
-    runtime_add_function_tx(
-        Space, Term, FAtom, W, no_runtime_snapshot, RawRef, ClauseRef).
-
 runtime_add_function_tx(Space, Term, FAtom, W, Snapshot, RawRef, ClauseRef) :-
     Term = [=, [FAtom|W], TermBody],
     RawTerm =.. [Space, '=', [FAtom|W], TermBody],
@@ -113,7 +109,7 @@ cleanup_runtime_function_add(F, RawRef, ClauseRef,
     % Recompile analysis may have staged post-add summaries before a later
     % operation failed.  The rollback restored the old program state, so make
     % that failure boundary explicit and conservative.
-    unified_checker_cache:unified_summary_cache_restore(CacheEntries).
+    unified_checker_cache:unified_summary_cache_store_many(CacheEntries).
 
 snapshot_runtime_function_clauses(F, Clauses) :-
     findall(runtime_compiled_clause(Source, Head, Body, Origin, Dependencies),
@@ -156,7 +152,6 @@ remember_runtime_add_ref(
 remember_runtime_add_ref(
         runtime_add_snapshot(_, _, _, _, _, _, Refs), clause, Ref) :- !,
     nb_setarg(2, Refs, Ref).
-remember_runtime_add_ref(_, _, _).
 
 runtime_add_raw_ref(RawRef, _, RawRef) :- nonvar(RawRef), !.
 runtime_add_raw_ref(_, runtime_add_refs(Stored, _), Stored) :-

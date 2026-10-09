@@ -128,8 +128,6 @@ with_det_enforced(Bool, Goal) :- catch(b_getval('$det_enforced', Saved), _, Save
                                                     Goal,
                                                     b_setval('$det_enforced', Saved)).
 
-det_enforced_now :- det_enforced_fn(_, _).
-
 %The (F, N) of the committed function currently under body analysis, or fail if
 %the gate is not raised (value false):
 det_enforced_fn(F, N) :- catch(b_getval('$det_enforced', E), _, fail), E = enforced(F, N).

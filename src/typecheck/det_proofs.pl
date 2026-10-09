@@ -737,14 +737,6 @@ proper_list_output(F, N) :- output_cert(proper_list, F, N).
 bool_output(F, N) :- unified_function_result_fact(F, N, proper_bool), !.
 bool_output(F, N) :- output_cert(bound_bool, F, N).
 
-%Internal symbol teardown uses this narrow cache operation. Ordinary clause
-%mutations invalidate certificate producers and all recorded consumers through
-%notify_mutation/1; no global output-certificate flush is needed.
-reset_output_certs(F) :- analysis_cache_invalidate_outputs(F).
-
-output_result_qualifies(Kind, Body) :-
-    output_result_qualifies_core(Kind, Body, [], yes, _).
-
 output_result_qualifies_core(proper_list, Body, Stack, Verdict, Dependencies) :-
     clause_result_proper_list_core(Body, Stack, Verdict, Dependencies).
 output_result_qualifies_core(bound_bool, Body, Stack, Verdict, Dependencies) :-
@@ -824,25 +816,6 @@ clause_result_proper_list_core(Body, Stack, Verdict, Dependencies) :-
     length(GArgs, N), !,
     output_cert_core(proper_list, G, N, Stack, Verdict, Dependencies).
 clause_result_proper_list_core(_, _, no, []).
-
-%A clause body whose RESULT is provably a bound boolean. manifest_bool/1
-%covers the leaves - the true/false literals and a det builtin whose sole
-%declared output is Bool ((== $values ()) is one) - and, like every result
-%probe here, all tests are NON-BINDING (== on heads, nonvar guards): Body is
-%the shared clause term the translator compiles next. The enforced-param
-%clause of manifest_bool cannot fire here (the analysis scope is not open at
-%derivation time), which only costs precision, never soundness.
-clause_result_bool(Body) :- manifest_bool(Body), !.
-clause_result_bool(Body) :- nonvar(Body), Body = [G|GArgs], atom(G), is_list(GArgs),
-                            length(GArgs, N), bool_output(G, N), !.
-clause_result_bool(Body) :- nonvar(Body), Body = [If, _, T, E], If == if, !,
-                            clause_result_bool(T), clause_result_bool(E).
-clause_result_bool(Body) :- nonvar(Body), Body = [If, _, T], If == if, !,
-                            clause_result_bool(T).   %no else: no result, not an unbound one
-clause_result_bool(Body) :- nonvar(Body), Body = [Let, _, _, In], Let == let, !,
-                            clause_result_bool(In).
-clause_result_bool(Body) :- nonvar(Body), Body = [Ls, _, In], Ls == 'let*', !,
-                            clause_result_bool(In).
 
 %A clause body whose RESULT is provably a bound proper list. Every test here is
 %NON-BINDING (nonvar guards + ==): Body is the SHARED clause body term that
@@ -1027,13 +1000,6 @@ overlapping_meta_pair(Metas) :- append(_, [Meta1|Rest], Metas),
                                 clause_heads_overlap(A1, A2),
                                 \+ body_commits(B2),
                                 \+ body_conditionally_commits(B2).
-
-%Public compatibility wrapper.  The functional core returns its full evidence;
-%legacy callers that only need the detailed cardinality verdict keep /2.
-deterministic_expr(Expr, Result) :-
-    deterministic_expr_proof(Expr, Proof),
-    analysis_proof_verdict(Proof, Result),
-    analysis_reemit_proof(Proof).
 
 deterministic_expr_proof(Expr, Proof) :-
     analysis_collect(deterministic_expr_core(Expr, Result), Events),

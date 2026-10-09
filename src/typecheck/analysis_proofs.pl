@@ -56,38 +56,6 @@ analysis_cache_remove_key(Key) :-
 analysis_cache_remove_keys(Keys) :-
     forall(member(Key, Keys), analysis_cache_remove_key(Key)).
 
-analysis_cache_keys(Template, Keys) :-
-    findall(Key,
-            ( analysis_memo(Key, _),
-              subsumes_term(Template, Key) ),
-            Keys0),
-    sort(Keys0, Keys).
-
-% Legacy selectors remain for callers which are not mutation boundaries.  A
-% program mutation goes through analysis_cache_invalidate_event/1 below: it
-% removes only proofs whose recorded (or memo-key-implied) dependencies match.
-analysis_cache_invalidate(all) :-
-    findall(Key, analysis_memo(Key, _), Keys0),
-    sort(Keys0, Keys),
-    analysis_cache_remove_keys(Keys).
-analysis_cache_invalidate(det) :-
-    analysis_cache_keys(det(_, _), Keys),
-    analysis_cache_remove_keys(Keys).
-analysis_cache_invalidate(assume) :-
-    analysis_cache_keys(assume(_, _), Keys),
-    analysis_cache_remove_keys(Keys).
-analysis_cache_invalidate(effect) :-
-    analysis_cache_keys(effect(_, _, _), Keys),
-    analysis_cache_remove_keys(Keys).
-analysis_cache_invalidate(effect(F)) :-
-    analysis_cache_keys(effect(F, _, _), Keys),
-    analysis_cache_remove_keys(Keys).
-analysis_cache_invalidate(output) :-
-    analysis_cache_keys(output(_, _, _), Keys),
-    analysis_cache_remove_keys(Keys).
-analysis_cache_invalidate(output(Kind, F, N)) :-
-    analysis_cache_remove_key(output(Kind, F, N)).
-
 analysis_cache_invalidate_event(Event) :-
     findall(Key,
             ( mutation_candidate_dependency(Event, Dependency),
@@ -96,8 +64,15 @@ analysis_cache_invalidate_event(Event) :-
     sort(Keys0, Keys),
     analysis_cache_remove_keys(Keys).
 
-analysis_cache_invalidate_outputs(F) :-
-    analysis_cache_keys(output(_, F, _), Keys),
+%Symbol teardown: ordinary mutations go through analysis_cache_invalidate_event/1,
+%but a forgotten symbol's own effect and output proofs are removed by name.
+analysis_cache_forget_symbol(F) :-
+    findall(Key,
+            ( analysis_memo(Key, _),
+              ( subsumes_term(effect(F, _, _), Key)
+              ; subsumes_term(output(_, F, _), Key) ) ),
+            Keys0),
+    sort(Keys0, Keys),
     analysis_cache_remove_keys(Keys).
 
 analysis_memo_dependencies(Key, Proof, Dependencies) :-
@@ -297,9 +272,3 @@ analysis_terms_inventory([Term|Terms], Calls-CallsTail,
     analysis_term_inventory(Term, Calls-CallsMid, Symbols-SymbolsMid),
     analysis_terms_inventory(Terms, CallsMid-CallsTail,
                              SymbolsMid-SymbolsTail).
-
-analysis_snapshot_proof(Subject, Snapshot, Dependencies,
-                        analysis_proof(Subject, snapshot(Snapshot),
-                                       requirements([]), certificates([]),
-                                       dependencies(Deps))) :-
-    sort(Dependencies, Deps).

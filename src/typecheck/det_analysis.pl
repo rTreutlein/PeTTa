@@ -194,16 +194,6 @@ det_closure_positions([pos(Idx, M, _)|Ps], Args) :- nth0(Idx, Args, Arg),
 %fails:
 det_arg_evidence(Arg, M) :- closure_effect_level(Arg, M, det).
 
-%A named function used as a VALUE is the same function it is when called, so
-%it is judged by the same relation - builtin table first, then the declared
-%arrow, then clause analysis. Reading only the declaration here is what let
-%a declaration certify `or` as a deterministic fold accumulator while a
-%direct call to or/2 was rejected: one symbol, two verdicts. The table is the
-%checker's own knowledge and outranks a
-%declaration it contradicts, exactly as it does for a direct call and for the
-%oracle's wrapping decision (oracle_det_believed/3).
-det_atom_evidence(F2, M) :- catch(function_call_determinism(F2, M, Det), _, fail), Det == det.
-
 %The named function's own full arity (declared, else from stored clauses):
 fn_own_arity(F2, A) :- fn_decl_arity(F2, A, _, _), !.
 fn_own_arity(F2, A) :- catch(nb_getval(F2, Metas), _, fail),
@@ -578,15 +568,6 @@ bind_destructured_field_types(Pat, Val) :-
     call_output_type(Val, OT),
     is_list(OT), same_length(Pat, OT),
     bind_pat_field_types(Pat, OT).
-
-bind_det_pattern_type(P, T) :- ( var(P), nonvar(T), \+ is_arrow_type(T), \+ wildcard_type_t(T)
-                                 -> add_known_type(P, T)
-                                ; functional_pattern_application(P, _, _)
-                                  -> bind_pattern_typed(P, T)
-                                ; is_list(P), is_list(T), same_length(P, T),
-                                  \+ is_arrow_type(T)
-                                  -> bind_pat_field_types(P, T)
-                                ; true ).
 
 bind_pat_field_types([], []).
 bind_pat_field_types([P|Ps], [T|Ts]) :- ( var(P), nonvar(T), \+ is_arrow_type(T), \+ wildcard_type_t(T)

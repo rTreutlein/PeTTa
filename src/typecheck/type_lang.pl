@@ -433,12 +433,6 @@ set_out_type(Out, OT) :- ( var(Out), nonvar(OT), \+ wildcard_type_t(OT) -> add_k
 set_unique_decl_out(F, N, Out) :- ( atom(F), findall(OT, fn_decl_arity(F, N, _, OT), [OT1])
                                     -> set_out_type(Out, OT1) ; true ).
 
-%Manual call/reduce dispatch bypasses typed translation, not typing: when the
-%target has exactly one declaration at this arity, its input checks apply:
-manual_dispatch_arg_checks(F, N, AVs, Gs) :- ( atom(F), findall(ATs, fn_decl_arity(F, N, ATs, _), [ATs1])
-                                               -> apply_call_args(declared, F, AVs, ATs1, Gs)
-                                                ; Gs = [] ).
-
 manual_dispatch_arg_checks_status(F, N, AVs, Gs, Status) :-
     ( atom(F), findall(ATs, fn_decl_arity(F, N, ATs, _), [ATs1])
       -> apply_call_args_status(declared, F, AVs, ATs1, Gs, Status)

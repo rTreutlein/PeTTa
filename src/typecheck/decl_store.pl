@@ -51,14 +51,6 @@ explicit_committed_decl(F, N, Det) :-
     fn_decl(F, N, _, effect_model(Det, _), _, _),
     committed_det(Det).
 
-%Compatibility view: like the old side table, it succeeds only for trusted
-%library origin (user was represented by absence).
-decl_origin(F, Origin) :-
-    fn_decl(F, _, _, _, Origin, _),
-    Origin = library(_).
-decl_origin(Name, Origin) :-
-    nonfn_decl_origin(Name, Origin).
-
 trusted_library_decl(F) :-
     fn_decl(F, _, _, _, library(_), _), !.
 
@@ -885,9 +877,6 @@ type_kind_representation([K, R], R) :-
 declaration_mentions_any(Names, [_, _, Type]) :-
     member(Name, Names), type_term_mentions_alias(Type, Name), !.
 
-declaration_function_name([_, F, Type], F) :-
-    nonvar(Type), fn_type_shape(Type, _, _, _).
-
 erase_cached_declaration_only([_, Name, [NT, R]]) :- NT == 'Newtype', !,
     normalize_type(R, RN),
     ( clause(declared_newtype(Name, R2), true, Ref), R2 =@= RN -> erase(Ref) ; true ).
@@ -912,18 +901,6 @@ erase_cached_declaration_only([_, Name, Type]) :-
     ; normalize_type(Type, TN),
       ( clause(declared_value_type(Name, T2), true, Ref), T2 =@= TN -> erase(Ref) ; true ) ).
 
-affected_decl_functions(Names, Fs) :-
-    findall(F,
-            ( declared_fn_type(F, ATs, OT, _),
-              member(Name, Names), type_term_mentions_alias(ATs-OT, Name) ),
-            ByType),
-    findall(F,
-            ( catch(translated_from(_, Term), _, fail), nonvar(Term),
-              Term = [=, Head, _], nonvar(Head), Head = [F|_],
-              member(Name, Names), type_term_mentions_alias(Term, Name) ),
-            BySource),
-    append(ByType, BySource, Fs0), sort(Fs0, Fs).
-
 forget_symbol_types(Name) :- remove_all_fn_decl_records(Name),
                              unified_checker_invalidate_event(
                                  generated_specialization_removed(Name)),
@@ -935,8 +912,7 @@ forget_symbol_types(Name) :- remove_all_fn_decl_records(Name),
                              retractall(declared_space_type(Name, _)),
                              retractall(inferred_fn_type(Name, _, _)),
                              retractall(det_bound_proviso(Name, _, _, _)),
-                             analysis_cache_invalidate(effect(Name)),
-                             reset_output_certs(Name).  %withdraw the output certificates
+                             analysis_cache_forget_symbol(Name).
 
 %%% Store lookup (each retrieval yields a fresh copy of the declaration):
 fn_decl_arity(F, N, ATs, OT) :- declared_fn_type(F, ATs, OT, _), length(ATs, N).
