@@ -624,13 +624,20 @@ manifest_bool([F|As]) :- atom(F), is_list(As), length(As, N),
 
 %A bound is-member probe: a ground literal, or an enforced-bound direct param
 %(any type - only boundness matters, since the probe is a test operand):
-is_member_probe_bound(P) :- ground(P), !.
+is_member_probe_bound(P) :- ground_data(P), !.
 is_member_probe_bound(P) :- var(P), enforced_bound_param(P).
 
-%A manifest proper list that is fully ground and duplicate-free. sort/2 dedups
-%and orders; equal length to msort/2 (which keeps duplicates) means no dup:
-manifest_ground_dupfree_list(L) :- manifest_proper_list(L), ground(L),
+%A ground literal list that is duplicate-free. sort/2 dedups and orders; equal
+%length to msort/2 (which keeps duplicates) means no dup:
+manifest_ground_dupfree_list(L) :- is_list(L), ground_data(L),
                                    sort(L, S), msort(L, M), length(S, K), length(M, K).
+
+%A ground term that translation keeps as data all the way down, so its runtime
+%value is the source term itself. A call anywhere inside breaks that: (f),
+%(cons 1 (1)) and (1 (f)) can all evaluate to a list with a duplicate, and
+%(f) can evaluate to an unbound probe.
+ground_data(X) :- atomic(X), !.
+ground_data(X) :- compound(X), selection_transparent_actual(X), maplist(ground_data, X).
 
 %%% FEATURE 2 - output-properness certificate %%%
 %
