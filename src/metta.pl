@@ -36,8 +36,8 @@ library_source_exists(Path) :- file_name_extension(Path, metta, MettaPath),
 :- use_module(library(process)).
 :- use_module(library(filesex)).
 :- current_prolog_flag(argv, Argv),
-   ( member(mork, Argv) -> ensure_loaded([ext_points, parser, typecheck, translator, specializer, filereader, '../mork_ffi/morkspaces', spaces])
-                         ; ensure_loaded([ext_points, parser, typecheck, translator, specializer, filereader, spaces])).
+   ( member(mork, Argv) -> ensure_loaded([ext_points, parser, typecheck, translator, specializer, filereader, '../mork_ffi/morkspaces', spaces, load_cache])
+                         ; ensure_loaded([ext_points, parser, typecheck, translator, specializer, filereader, spaces, load_cache])).
 :- seed_builtin_types.
 
 %%%%%%%%%% Standard Library for MeTTa %%%%%%%%%%
@@ -420,6 +420,12 @@ importer_helper(Space, File) :-
        ; resolve_metta_import_path(File, CanonPath),
          import_once(Space, CanonPath, load_metta_file(CanonPath, _, Space)) ).
 
+%Like import! of a MeTTa file, replaying a stored snapshot of the load when one
+%matches (see load_cache.pl). Output printed while loading is not replayed.
+'cached-import!'(Space, File, true) :-
+    resolve_metta_import_path(File, CanonPath),
+    import_once(Space, CanonPath, load_metta_file_cached(CanonPath, _, Space)).
+
 :- dynamic translator_rule/1.
 'add-translator-rule!'(HV, true) :- ( translator_rule(HV)
                                       -> true ; assertz(translator_rule(HV)) ).
@@ -440,7 +446,7 @@ register_fun(N) :- assertz(fun(N)),
                           '<','>','==', '!=', '=', '=?', '<=', '>=', and, or, xor, implies, not, sqrt, exp, log, cos, sin,
                           'first-from-pair', 'second-from-pair', 'car-atom', 'cdr-atom', 'unique-atom', 'alpha-unique-atom',
                           repr, repra, parse, 'println!', 'readln!', test, assert, 'mm2-exec', atom_concat, atom_chars, copy_term, term_hash,
-                          foldl, first, last, append, length, 'size-atom', sort, msort, member, 'is-member', 'is-alpha-member', 'exclude-item', list_to_set, maplist, eval, reduce, 'import!',
+                          foldl, first, last, append, length, 'size-atom', sort, msort, member, 'is-member', 'is-alpha-member', 'exclude-item', list_to_set, maplist, eval, reduce, 'import!', 'cached-import!',
                           'add-atom', 'remove-atom', 'get-atoms', match, 'is-var', 'is-ground', 'is-expr', 'is-space', 'get-mettatype',
                           decons, 'decons-atom', 'py-call', 'get-type', 'get-metatype', '=alpha', concat, sread, cons, reverse,
                           '#+','#-','#*','#div','#//','#mod','#min','#max','#<','#>','#=','#\\=','set_hook',
