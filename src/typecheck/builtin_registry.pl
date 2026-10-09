@@ -388,23 +388,38 @@ validate_builtin_registry_unique :-
 validate_builtin_registry_unique :-
     throw(error(duplicate_builtin_registry_key, builtin_registry)).
 
+%Every named hook must have a dispatch clause of its own: a clause keyed by
+%the rule name, a deterministic_expr_core/2 clause for a conditional builtin's
+%exact form, or a lowering test for the hook in the translator.
 validate_builtin_registry_hooks :-
     forall(builtin_argument_rule(_, _, Rule),
-           ( user:builtin_argument_rule_defined(Rule)
+           ( clause(user:builtin_argument_rule_verdict(Key, _, _, _), _), Key == Rule
              -> true
              ; throw(error(undefined_builtin_argument_rule(Rule), builtin_registry)) )),
-    forall(builtin_conditional_rule(_, _, Rule),
-           ( user:builtin_conditional_rule_defined(Rule)
+    forall(builtin_conditional_rule(F, N, Rule),
+           ( clause(user:deterministic_expr_core([Key|Args], _), _), Key == F,
+             is_list(Args), length(Args, N)
              -> true
              ; throw(error(undefined_builtin_conditional_rule(Rule), builtin_registry)) )),
     forall(builtin_contextual_typing(_, _, Hook),
-           ( user:builtin_contextual_typing_rule_defined(Hook)
+           ( clause(user:builtin_contextual_output_rule(Key, _, _), _), Key == Hook
              -> true
              ; throw(error(undefined_builtin_contextual_typing_rule(Hook), builtin_registry)) )),
+    source_file(user:translate_expr(_, _, _), Translator),
+    findall(Hook,
+            ( source_file(user:Head, Translator),
+              clause(user:Head, Body),
+              sub_term(Test, Body), nonvar(Test),
+              lowering_test(Test, Hook), atom(Hook) ),
+            Lowered),
     forall(builtin_codegen_hook(_, _, Hook),
-           ( user:builtin_codegen_rule_defined(Hook)
+           ( memberchk(Hook, Lowered)
              -> true
              ; throw(error(undefined_builtin_codegen_rule(Hook), builtin_registry)) )).
+
+lowering_test(special_builtin_form(_, _, Hook), Hook).
+lowering_test(builtin_codegen_hook(_, _, Hook), Hook).
+lowering_test(builtin_codegen_symbol(_, Hook), Hook).
 
 validate_builtin_registration_coverage :-
     forall(user:fun(F),

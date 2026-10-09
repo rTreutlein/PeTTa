@@ -131,12 +131,6 @@ untyped_call_out(F, Args, Out) :-
         builtin_contextual_typing(F, N, Rule),
         builtin_contextual_output_rule(Rule, Args, Out).
 
-builtin_contextual_typing_rule_defined(cons_list).
-builtin_contextual_typing_rule_defined(union_list).
-builtin_contextual_typing_rule_defined(first_list).
-builtin_contextual_typing_rule_defined(list_element).
-builtin_contextual_typing_rule_defined(list_tail).
-
 builtin_contextual_output_rule(cons_list, [H, Tl], Out) :-
         cons_out_type(H, Tl, Out).
 builtin_contextual_output_rule(union_list, [A, B], Out) :-

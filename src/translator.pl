@@ -567,48 +567,6 @@ pattern_value_shape(P, _) :- functional_pattern_application(P, _, _), !.
 pattern_value_shape(P, Shape) :- is_list(P), !, maplist(pattern_value_shape, P, Shape).
 pattern_value_shape(P, P).
 
-%The registry owns the mapping from builtin/arity to these procedural lowering
-%hooks. Keeping this explicit list beside the implementations lets its
-%load-time validator reject a misspelled or removed hook.
-builtin_codegen_rule_defined(and_then).
-builtin_codegen_rule_defined(arithmetic_native).
-builtin_codegen_rule_defined(brand).
-builtin_codegen_rule_defined(case).
-builtin_codegen_rule_defined(catch).
-builtin_codegen_rule_defined(collapse_all).
-builtin_codegen_rule_defined(cut).
-builtin_codegen_rule_defined(dynamic_reduce).
-builtin_codegen_rule_defined(eval_source).
-builtin_codegen_rule_defined(explicit_data).
-builtin_codegen_rule_defined(explicit_list).
-builtin_codegen_rule_defined(filter_pseudo_lambda).
-builtin_codegen_rule_defined(foldall).
-builtin_codegen_rule_defined(foldl_pseudo_lambda).
-builtin_codegen_rule_defined(forall).
-builtin_codegen_rule_defined(hyperpose).
-builtin_codegen_rule_defined(if_then).
-builtin_codegen_rule_defined(if_then_else).
-builtin_codegen_rule_defined(lambda).
-builtin_codegen_rule_defined(let_bind).
-builtin_codegen_rule_defined(let_star).
-builtin_codegen_rule_defined(manual_call).
-builtin_codegen_rule_defined(map_pseudo_lambda).
-builtin_codegen_rule_defined(once).
-builtin_codegen_rule_defined(or_else).
-builtin_codegen_rule_defined(progn).
-builtin_codegen_rule_defined(prog1).
-builtin_codegen_rule_defined(quote).
-builtin_codegen_rule_defined(reified_comparison).
-builtin_codegen_rule_defined(sealed).
-builtin_codegen_rule_defined(superpose_literal).
-builtin_codegen_rule_defined(test_collect).
-builtin_codegen_rule_defined(transaction).
-builtin_codegen_rule_defined(translate_predicate).
-builtin_codegen_rule_defined(type_ascription).
-builtin_codegen_rule_defined(typed_space_match).
-builtin_codegen_rule_defined(typed_space_update).
-builtin_codegen_rule_defined(with_mutex).
-
 %Turn a MeTTa S-expression into goals. The four-argument traversal is the one
 %syntax walk; only the result positions documented above pass expected(T) on.
 translate_expr(Expr, Goals, Out) :-

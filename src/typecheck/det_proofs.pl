@@ -328,17 +328,6 @@ builtin_call_determinism_args(F, N, Args, Det) :-
     builtin_argument_rule(F, N, Rule),
     builtin_argument_rule_verdict(Rule, F, Args, Det).
 
-builtin_argument_rule_defined(proper_list_arg0).
-builtin_argument_rule_defined(proper_list_arg1).
-builtin_argument_rule_defined(nonempty_list_arg0).
-builtin_argument_rule_defined(manifest_indexed_list).
-builtin_argument_rule_defined(space_update).
-builtin_argument_rule_defined(manifest_foreign_goal).
-builtin_argument_rule_defined(bound_membership_probe).
-builtin_argument_rule_defined(manifest_booleans).
-
-builtin_conditional_rule_defined(higher_order_list).
-
 %A -[semidet]-> user-function call is det at a site narrowed to nonempty
 %lists when (a) the callee's heads cover every nonempty list and (b) every
 %body is may-not-fail with non-overlapping heads, which body_determinism/3
