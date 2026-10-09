@@ -217,7 +217,7 @@ ensure_deterministic_expr(Det, Expr, Fun) :-
 %clause, so overlap with it cannot create a choicepoint:
 ensure_non_overlapping_clause_heads(_, _, []).
 ensure_non_overlapping_clause_heads(F, Args, [Meta|Rest]) :-
-    fun_meta_parts(Meta, PrevArgs, PrevBody, _),
+    Meta = fun_meta(PrevArgs, PrevBody, _),
     ( clause_heads_overlap(Args, PrevArgs),
       \+ body_commits(PrevBody),
       \+ body_conditionally_commits(PrevBody)

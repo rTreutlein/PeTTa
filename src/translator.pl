@@ -1,13 +1,5 @@
 :- dynamic translated_from/2.
 
-%Canonical clause-analysis metadata.  The third field records whether source
-%head elaboration emitted executable goals; such a head is not represented by
-%the normalized argument patterns alone and therefore cannot support
-%selection or coverage proofs.
-fun_meta_parts(fun_meta(Args, Body, HeadForm), Args, Body, HeadForm).
-
-fun_meta_head_goals(Meta) :-
-    fun_meta_parts(Meta, _, _, head_goals).
 
 %Pattern matching, structural and functional/relational constraints on arguments:
 constrain_args(X, X, []) :- (var(X); atomic(X)), !.
@@ -75,18 +67,16 @@ current_compiling_caller(F, N) :-
 translate_clause_core(Input, (Head :- BodyConj), ConstrainArgs) :-
                                                Input = [=, [F|Args0], BodyExpr],
                                                length(Args0, SourceArity),
-                                               %The clause-set memo for the
-                                               %function being built is stale
-                                               %before validation of this very
-                                               %clause.  Consumer propagation
-                                               %happens later through
-                                               %notify_mutation/1.
+                                               %The clause-set memo is stale before
+                                               %this very clause is validated:
                                                analysis_cache_invalidate_event(
                                                    clause_changed(F/SourceArity,
                                                                   compiling)),
                                                ( ConstrainArgs -> maplist(constrain_args, Args0, Args1, GoalsA),
                                                                   flatten(GoalsA,GoalsPrefix)
                                                                 ; Args1 = Args0, GoalsPrefix = [] ),
+                                               %A head that elaborated to goals cannot
+                                               %support selection or coverage proofs:
                                                ( GoalsPrefix == [] -> HeadForm = clean
                                                ; HeadForm = head_goals ),
                                                catch(nb_getval(F, Prev), _, Prev = []),
@@ -222,7 +212,7 @@ clause_commit_cut(F, Args) :- \+ suppress_det_cut(true),
 function_has_conditional_commit(F, N) :-
     catch(nb_getval(F, Metas), _, fail),
     member(Meta, Metas),
-    fun_meta_parts(Meta, Args, Body, _),
+    Meta = fun_meta(Args, Body, _),
     length(Args, N),
     body_conditionally_commits(Body), !.
 
@@ -1095,7 +1085,7 @@ translate_expr([H0|T0], Expectation, Goals, Out) :-
                                              ascribe_type(Out0, TN, GsA),
                                              %An ascribed literal keeps the author's type when it is
                                              %more specific than the value's own (e.g. (the (List Item) ())):
-                                             ( nonvar(Out0), nonvar(TN), \+ wildcard_type_t(TN),
+                                             ( nonvar(Out0), nonvar(TN), \+ wildcard_type(TN),
                                                \+ ( value_single_type(Out0, VT), VT == TN )
                                                -> add_known_type(Out, TN),
                                                   append([GsH, GsE, GsA, [Out = Out0]], Goals)
@@ -1382,7 +1372,7 @@ contextual_initializer_use(Expr, Binder, Expected) :-
 contextual_initializer_use(Expr, Binder, Expected) :-
         nonvar(Expr), Expr = [F|CallArgs], atom(F), is_list(CallArgs),
         length(CallArgs, N),
-        findall(ft(ATs, OT), fn_decl_arity(F, N, ATs, OT), [ft(ATs, _)]),
+        unique_fn_decl(F, N, ATs, _),
         nth0(BinderI, CallArgs, Use), Use == Binder,
         nth0(BinderI, ATs, Expected),
         resolve_source_arrow_args(CallArgs, ATs, BinderI),
@@ -1466,7 +1456,7 @@ overload_branch(Fun, AVs, Out, ft(ATs, OT), Branch) :- maplist(overload_branch_g
                                                        build_direct_call(Fun, AVs, Out, GuardGs, Extra, BranchGoals),
                                                        goals_list_to_conj(BranchGoals, Branch).
 
-overload_out_guard(MultiDecl, Fun, Out, OT, Extra) :- ( MultiDecl == true, ground(OT), \+ wildcard_type_t(OT)
+overload_out_guard(MultiDecl, Fun, Out, OT, Extra) :- ( MultiDecl == true, ground(OT), \+ wildcard_type(OT)
                                                         -> ( strict_mode(true)
                                                              -> throw(error(strict_runtime_typecheck(Fun, typecheck_match(Out, OT)), typecheck))
                                                             ; trusted_guard_waiver(Fun)

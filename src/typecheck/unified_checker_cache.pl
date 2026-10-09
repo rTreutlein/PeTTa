@@ -21,14 +21,16 @@ into its row or record `summary(Callee/Arity)`.  Removal and invalidation follow
 the latter edges transitively.
 
 This module deliberately owns no source clauses, IR, attributed variables or
-source-occurrence records.  It also has no dependency on the bridge or the
-compiled-clause dependency graph, which keeps it usable at their integration
+source-occurrence records.  It depends only on the abstract domain, not on the
+bridge or the compiled-clause dependency graph, which keeps it usable at their integration
 boundary without introducing a module cycle.
 
 Every public operation is serialized.  A store validates the complete batch
 before changing the cache, and replacing a row evicts its existing dependents
 before publishing the replacement.
 */
+
+:- use_module(abstract_domain).
 
 :- dynamic cached_summary/4.
 % cached_summary(F, N, FunctionSummary, Dependencies)
@@ -127,16 +129,11 @@ validate_summary(Summary, F, N) :-
     ( Summary = function_summary(F, N, Card, ResultFacts,
                                  Effects, Diagnostics),
       atom(F), integer(N), N >= 0,
-      valid_cardinality(Card),
+      once(card_level(Card, _)),
       is_list(ResultFacts), is_list(Effects), is_list(Diagnostics)
       -> true
     ; throw(error(domain_error(unified_function_summary, Summary),
                   unified_checker_cache)) ).
-
-valid_cardinality(card(Lower, Upper)) :-
-    memberchk(Lower, [0, 1]),
-    ( memberchk(Upper, [0, 1]), Upper >= Lower
-    ; Upper == many ).
 
 validate_dependencies(Dependencies) :-
     require_ground(Dependencies, summary_dependencies),

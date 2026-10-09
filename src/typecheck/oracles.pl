@@ -80,7 +80,7 @@ oracle_check(V, T) :- ( var(V) -> true
 %at runtime with the checker's OWN value relation (check_value). The reflective
 %guard is deliberately not used here: it is weaker than the checker.
 oracle_output_check(DeclOut, Out, Gs0, Gs) :-
-    ( oracle_mode(true), DeclOut = out(OT, _), nonvar(OT), \+ wildcard_type_t(OT), Gs0 == []
+    ( oracle_mode(true), DeclOut = out(OT, _), nonvar(OT), \+ wildcard_type(OT), Gs0 == []
       -> Gs = [oracle_check(Out, OT)]
        ; Gs = Gs0 ).
 
@@ -88,7 +88,7 @@ oracle_output_check(DeclOut, Out, Gs0, Gs) :-
 %Rational terms cannot safely be stored in an asserted compiled clause, so an
 %acyclicity failure means this optional oracle cannot instrument that value.
 oracle_arg_check(AV, T, Gs) :-
-    ( oracle_mode(true), nonvar(T), \+ wildcard_type_t(T),
+    ( oracle_mode(true), nonvar(T), \+ wildcard_type(T),
       acyclic_term(T), acyclic_term(AV)
       -> Gs = [oracle_check(AV, T)]
        ; Gs = [] ).

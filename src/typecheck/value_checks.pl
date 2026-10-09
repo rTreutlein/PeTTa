@@ -82,7 +82,7 @@ check_value(V, T, St) :- ( V == true ; V == false ), !,
                          ; prim_mismatch_status('Bool', T, St) ).
 check_value(V, T, St) :- var(T), !, ( value_single_type(V, VT) -> T = VT ; true ), St = ok.
 check_value(_, T, ok) :- foreign_type(T), !.
-check_value(_, T, St) :- wildcard_type_t(T), !, St = ok.
+check_value(_, T, St) :- wildcard_type(T), !, St = ok.
 check_value(V, T, St) :- is_union(T), !, T = ['|'|Ms],
                          ( member(M, Ms), check_value(V, M, SM), SM == ok -> St = ok
                          ; forall(member(M, Ms), check_value(V, M, mismatch)) -> St = mismatch
@@ -177,13 +177,11 @@ tuple_fields_status([F|Fs], [T|Ts], St) :- elem_status(F, T, S1),
 %already wrote - so it runs unconditionally and, when it commits to det or
 %semidet, the inferred arrow carries that real head. A committed head fits
 %every slot a plain -> fits (see det_level_fits/2), so this only ever admits
-%more. With no committed proof the old behaviour stands: conservatively
-%nondet under --strict-det, an uncommitted plain -> otherwise.
-committed_determinism(det).
-committed_determinism(semidet).
+%more. With no committed proof it is conservatively nondet under --strict-det,
+%an uncommitted plain -> otherwise.
 
 inferred_arrow_head(F, N, H) :-
-    ( catch(( function_call_determinism(F, N, D), committed_determinism(D) ), _, fail)
+    ( catch(( function_call_determinism(F, N, D), committed_det(D) ), _, fail)
       -> det_arrow_head(D, H)
     ; strict_det(true) -> det_arrow_head(nondet, H)
     ; H = (->) ).
@@ -204,7 +202,7 @@ inferred_value_candidates(partial(F, B), Cs) :- !,
 inferred_value_candidates(_, []).
 
 %Slow completion of the primitive fast paths above:
-prim_mismatch_status(P, T, St) :- ( wildcard_type_t(T) -> St = ok
+prim_mismatch_status(P, T, St) :- ( wildcard_type(T) -> St = ok
                                   ; is_union(T) -> ( T = ['|'|Ms], member(M, Ms), type_compat_soft(P, M)
                                                      -> St = ok ; St = mismatch )
                                   ; atom(T), declared_newtype(T, R) -> prim_mismatch_status(P, R, St)
@@ -303,7 +301,7 @@ arg_soft_ok(AV, T) :- ( var(AV) -> ( known_singleton(AV, K) -> copy_term(K, K2),
 decl_survives(AVs, ft(ATs, _)) :- \+ \+ maplist(arg_soft_ok, AVs, ATs).
 
 arg_statically_ok(AV, T) :- \+ \+ ( var(AV) -> ( known_singleton(AV, K) -> type_unify(K, T)
-                                               ; ( var(T) -> true ; wildcard_type_t(T) ) )
+                                               ; ( var(T) -> true ; wildcard_type(T) ) )
                                              ; check_value(AV, T, ok) ).
 
 %%% Effectful call-site argument checking, one arg.
@@ -338,7 +336,7 @@ arg_statically_ok(AV, T) :- \+ \+ ( var(AV) -> ( known_singleton(AV, K) -> type_
 %   wrong answer.
 check_call_arg(Mode, Fun, AV, T, Gs) :- ( var(AV)
                                           -> ( known_singleton(AV, K)
-                                               -> ( nonvar(T), wildcard_type_t(T) -> Gs = []  %wildcards carry no knowledge
+                                               -> ( nonvar(T), wildcard_type(T) -> Gs = []  %wildcards carry no knowledge
                                                   ; type_unify(K, T) -> oracle_arg_check(AV, T, Gs)
                                                   %conflicting brands cannot be deferred to a runtime
                                                   %guard - newtypes are erased there - so they reject
@@ -350,7 +348,7 @@ check_call_arg(Mode, Fun, AV, T, Gs) :- ( var(AV)
                                                   ; taint_assumption(AV),  %known conflict: runtime error carries the value
                                                     type_guard(Fun, AV, T, Gs) )
                                              ; var(T) -> Gs = []
-                                             ; wildcard_type_t(T) -> Gs = []
+                                             ; wildcard_type(T) -> Gs = []
                                              %an untyped value is not evidence of a wrong one:
                                              ; Mode == inferred -> Gs = []
                                              ; type_guard(Fun, AV, T, Gs) )
@@ -365,7 +363,7 @@ check_call_arg(Mode, Fun, AV, T, Gs) :- ( var(AV)
 
 %Open structured types (e.g. (List $a)) still guard their outer shape; only a
 %fully unconstrained type variable needs no check at all:
-type_guard(Fun, AV, T, Gs) :- ( nonvar(T), \+ wildcard_type_t(T)
+type_guard(Fun, AV, T, Gs) :- ( nonvar(T), \+ wildcard_type(T)
                                 -> ( undecidable_arrow_commitment(T)
                                      -> throw(error(determinism_conflict(Fun, unproven_closure(AV, T)), determinism))
                                    ; strict_mode(true),
@@ -425,7 +423,7 @@ open_nominal_intersection_obligations_([V|Vs], [T|Ts], AVs, ATs, I, Os) :-
     open_nominal_intersection_obligations_(Vs, Ts, AVs, ATs, I2, Rest).
 
 open_nominal_atom_type(T) :-
-    atom(T), \+ primitive_type(T), \+ wildcard_type_t(T),
+    atom(T), \+ primitive_type(T), \+ wildcard_type(T),
     \+ declared_newtype(T, _),
     \+ declared_type_alias(T, _),
     \+ declared_foreign_type(T, _),
@@ -472,7 +470,7 @@ trusted_guard_waiver(Fun) :-
 trusted_unverified_call(Fun, Args) :-
     trusted_guard_waiver(Fun),
     length(Args, N),
-    findall(ATs, fn_decl_arity(Fun, N, ATs, _), [ATs]),
+    unique_fn_decl(Fun, N, ATs, _),
     paired_unverified_obligation(Args, ATs).
 
 paired_unverified_obligation([AV|AVs], [T|Ts]) :-
@@ -495,7 +493,7 @@ runtime_type_ok(V, 'Number') :- number(V), !.
 runtime_type_ok(V, 'String') :- string(V), !.
 runtime_type_ok(V, 'Bool') :- ( V == true ; V == false ), !.
 runtime_type_ok(_, T) :- var(T), !.
-runtime_type_ok(_, T) :- wildcard_type_t(T), !.
+runtime_type_ok(_, T) :- wildcard_type(T), !.
 runtime_type_ok(V, T) :- list_type(T, ET), !,
                          runtime_list_ok(V, ET).
 runtime_type_ok(V, T) :- is_arrow_type(T), !,
@@ -549,7 +547,7 @@ runtime_list_ok([E|Es], ET) :- ( var(E) -> constrain_var_type(E, ET) ; runtime_t
 %checked), or a value atom declared T:
 nominal_value_ok(V, T) :- is_list(V), V = [Ctor|Fields], atom(Ctor), !,
                           length(Fields, N),
-                          findall(ATs-OT, fn_decl_arity(Ctor, N, ATs, OT), [FieldTs-OT1]),
+                          unique_fn_decl(Ctor, N, FieldTs, OT1),
                           OT1 == T,
                           runtime_tuple_ok(Fields, FieldTs).
 nominal_value_ok(V, T) :- atom(V), declared_value_type(V, VT), VT == T.

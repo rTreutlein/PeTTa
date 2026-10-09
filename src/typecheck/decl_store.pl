@@ -572,7 +572,7 @@ forbidden_effect_parameter_occurrence(T) :-
 %declaration, including arrows nested in parameter/output positions (and
 %aliases expanded into those positions), must name its cardinality. The
 %standard builtin signature file is checker-internal type metadata; builtin
-%determinism comes authoritatively from det_builtins.pl, so that one load path
+%determinism comes authoritatively from builtin_registry.pl, so that one load path
 %is exempt instead of duplicating hundreds of table annotations.
 require_explicit_det_arrows(Name, Type) :-
     ( strict_det(true), \+ builtin_signature_load,
@@ -598,8 +598,8 @@ builtin_signature_load :-
 %prepass copy if normalize_type/2 expanded an alias; otherwise that stale
 %opaque overload would leak the alias name into the checker.
 remove_unexpanded_fn_precache(Name, ATs, OT, Det, ATN, OTN) :-
-    maplist(normalize_type_syntax, ATs, RawATs),
-    normalize_type_syntax(OT, RawOT),
+    maplist(normalize_type(syntax), ATs, RawATs),
+    normalize_type(syntax, OT, RawOT),
     ( (RawATs-RawOT) =@= (ATN-OTN)
       -> true
     ; canonical_effect_model(Det, RawATs, RawEffect),
@@ -607,20 +607,6 @@ remove_unexpanded_fn_precache(Name, ATs, OT, Det, ATN, OTN) :-
       remove_fn_decl_record(Name, N, scheme(RawATs, RawOT), RawEffect, _)
       -> true
     ; true ).
-
-%Canonicalize only arrow syntax, deliberately leaving atoms untouched. This
-%reconstructs the exact type cached before a source-local alias was visible.
-normalize_type_syntax(T, T) :- var(T), !.
-normalize_type_syntax(T, T) :- atomic(T), !.
-normalize_type_syntax(T, TN) :- is_list(T), fn_type_shape(T, ATs, OT, _), !,
-                                T = [Arrow|_],
-                                canonical_arrow(Arrow, H),
-                                maplist(normalize_type_syntax, ATs, ATN),
-                                normalize_type_syntax(OT, OTN),
-                                append(ATN, [OTN], Xs),
-                                TN = [H|Xs].
-normalize_type_syntax(T, TN) :- is_list(T), !, maplist(normalize_type_syntax, T, TN).
-normalize_type_syntax(T, T).
 
 %%% A fresh alias may arrive after declarations already cached its name as an
 %%% opaque atom. Rebuild every declaration store that contains that exact atom
@@ -916,6 +902,7 @@ forget_symbol_types(Name) :- remove_all_fn_decl_records(Name),
 
 %%% Store lookup (each retrieval yields a fresh copy of the declaration):
 fn_decl_arity(F, N, ATs, OT) :- declared_fn_type(F, ATs, OT, _), length(ATs, N).
+unique_fn_decl(F, N, ATs, OT) :- findall(A-O, fn_decl_arity(F, N, A, O), [ATs-OT]).
 fn_decl_partial(F, N, PTs, RTs, OT) :- fn_decl_partial(F, N, PTs, RTs, OT, _).
 fn_decl_partial(F, N, PTs, RTs, OT, Det) :- declared_fn_type(F, ATs, OT, Det),
                                             length(ATs, Total), Total > N,

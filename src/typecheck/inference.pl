@@ -40,7 +40,7 @@ param_promise_var(V) :- var(V),
 %parametric_output_check and reject at compile time:
 parametric_param_check(F, Vars) :- forall(member(T, Vars),
                                           ( var(T) -> true
-                                          ; wildcard_type_t(T) -> true
+                                          ; wildcard_type(T) -> true
                                           ; throw(error(non_parametric_param(F, T), typecheck)) )).
 
 %Only a candidate carrying CONCRETE type evidence makes a bottom body a
@@ -141,7 +141,7 @@ ctor_pattern_field_types(Arg) :- ( functional_pattern_application(Arg, _, _)
                                                  true)
                                       ; true )
                                   ; is_list(Arg), Arg = [Tag|Fs], atom(Tag), \+ fun(Tag), Fs \== [],
-                                   length(Fs, N), findall(ATs, fn_decl_arity(Tag, N, ATs, _), [ATs1])
+                                   length(Fs, N), unique_fn_decl(Tag, N, ATs1, _)
                                    -> catch(maplist(bind_param_type, Fs, ATs1),
                                             error(literal_type_mismatch(_, _), typecheck), true)
                                     ; true ).

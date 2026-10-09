@@ -860,7 +860,7 @@ intersect_analysis_result_facts(Analysis, Facts0, Facts) :-
     analysis_result_facts(Analysis, Other),
     include(fact_in(Other), Facts0, Facts).
 
-fact_in(Facts, Fact) :- member(Stored, Facts), Stored =@= Fact, !.
+fact_in(Facts, Fact) :- variant_member(Fact, Facts).
 
 exportable_fact(type(Type)) :- ground(Type).
 exportable_fact(proper_bool).
@@ -1164,7 +1164,7 @@ current_inference_assumption(Var, Type) :-
 
 concrete_inference_constraint(Type) :-
     nonvar(Type),
-    \+ catch(user:wildcard_type_t(Type), _, fail),
+    \+ catch(user:wildcard_type(Type), _, fail),
     \+ catch(user:unknown_candidate(Type), _, fail).
 
 apply_inference_updates([]).
@@ -1192,7 +1192,7 @@ state_type_fact(State, Id, Type) :-
 
 concrete_projectable_type(Type) :-
     ground(Type),
-    \+ catch(user:wildcard_type_t(Type), _, fail).
+    \+ catch(user:wildcard_type(Type), _, fail).
 
 type_is_new_for_variable(Var, Type) :-
     ( catch(user:known_candidates(Var, Known), _, fail)
@@ -1285,14 +1285,6 @@ pop_current_clause(saved(yes, Previous)) :- !,
     b_setval('$unified_current_clause', Previous).
 pop_current_clause(_) :- b_setval('$unified_current_clause', inactive).
 
-variant_dedup([], []).
-variant_dedup([X|Xs], Ys) :-
-    ( variant_member_local(X, Xs)
-      -> variant_dedup(Xs, Ys)
-    ; Ys = [X|Rest], variant_dedup(Xs, Rest) ).
-
-variant_member_local(X, [Y|_]) :- X =@= Y, !.
-variant_member_local(X, [_|Ys]) :- variant_member_local(X, Ys).
 
 
 :- begin_tests(unified_checker_bridge).

@@ -63,35 +63,16 @@ effect_body_determinism_proof(F, N, Name, Proof) :-
                         [effect(F/N), decl(F/N), clause_set(F/N)], Proof).
 effect_body_determinism_proof(F, N, Name, Proof) :-
     effect_poly_decl(F, N, Name, ATs, Positions),
-    catch(nb_getval(F, Metas0), _, Metas0 = []),
-    include(arity_meta(N), Metas0, Metas),
-    Metas \== [],
+    fun_metas(F, N, Metas),
     maplist(assume_det_meta(ATs, Positions), Metas, Upgraded),
     catch(b_getval('$effect_assume_stack', St), _, St = []),
     setup_call_cleanup(
         b_setval('$effect_assume_stack', [effect(F, N, Name)|St]),
-        ( with_det_enforced(enforced(F, N),
-                            clause_set_determinism_proof(Upgraded, ClauseProof)),
-          analysis_proof_verdict(ClauseProof, Raw),
-          effect_public_level(Raw, Det),
-          analysis_proof_requirements(ClauseProof, Bounds),
-          analysis_proof_certificates(ClauseProof, Certs),
-          analysis_proof_dependencies(ClauseProof, ClauseDeps),
-          analysis_term_dependencies(Upgraded, TermDeps),
-          append([[effect(F/N), decl(F/N), clause_set(F/N)],
-                  ClauseDeps, TermDeps], Ds0),
-          sort(Ds0, Deps),
-          Proof = analysis_proof(effect_body(F/N, Name), Det,
-                                 requirements(Bounds),
-                                 certificates(Certs),
-                                 dependencies(Deps)) ),
+        clause_set_subject_proof(effect_body(F/N, Name), F/N, enforced(F, N),
+                                 Upgraded, Proof),
         b_setval('$effect_assume_stack', St)),
     analysis_cache_store(effect(F, N, Name), Proof).
 
-effect_public_level(det, det).
-effect_public_level(semidet, semidet).
-effect_public_level(nondet, nondet).
-effect_public_level(unspecified, unspecified).
 
 %Instantiate $v from every corresponding closure argument and join it with the
 %intrinsic body verdict. A missing closure verdict stays `unspecified`: this is
@@ -106,9 +87,7 @@ effect_poly_call_determinism(F, N, Args, Det) :-
     effect_join(IntrinsicAndClosure, Selection, Det).
 
 effect_poly_selection_determinism(F, N, Args, Det) :-
-    catch(nb_getval(F, Metas0), _, fail),
-    include(arity_meta(N), Metas0, Metas),
-    Metas \== [],
+    fun_metas(F, N, Metas),
     inferred_selection_determinism(F, N, Args, Metas, Det).
 
 effect_positions_instantiation([], _, det).
@@ -178,7 +157,7 @@ arrow_det_positions(ATs, Positions) :- findall(pos(Idx, M, H),
 %Fun must have a UNIQUE arity-N declaration exposing at least one non-nondet
 %arrow parameter, and every such position's actual argument must be det (else
 %this path adds nothing and fails so the normal fallbacks run):
-det_closure_args_ok(Fun, N, Args) :- findall(ATs, fn_decl_arity(Fun, N, ATs, _), [ATs1]),
+det_closure_args_ok(Fun, N, Args) :- unique_fn_decl(Fun, N, ATs1, _),
                                      arrow_det_positions(ATs1, Positions),
                                      Positions \== [],
                                      det_closure_positions(Positions, Args).
@@ -197,7 +176,7 @@ det_arg_evidence(Arg, M) :- closure_effect_level(Arg, M, det).
 %The named function's own full arity (declared, else from stored clauses):
 fn_own_arity(F2, A) :- fn_decl_arity(F2, A, _, _), !.
 fn_own_arity(F2, A) :- catch(nb_getval(F2, Metas), _, fail),
-                       member(Meta, Metas), fun_meta_parts(Meta, As, _, _),
+                       member(Meta, Metas), Meta = fun_meta(As, _, _),
                        length(As, A), !.
 
 %body_determinism GIVEN the arrow-typed parameters are det. Analyzes COPIES
@@ -221,10 +200,8 @@ body_determinism_assuming_proof(F, N, Proof) :-
     analysis_make_proof(conditional_body(F/N), det, [],
                         [effect(F/N), decl(F/N), clause_set(F/N)], Proof).
 body_determinism_assuming_proof(F, N, Proof) :-
-    catch(nb_getval(F, Metas0), _, Metas0 = []),
-    include(arity_meta(N), Metas0, Metas),
-    Metas \== [],
-    findall(ATs, fn_decl_arity(F, N, ATs, _), [ATs1]),
+    fun_metas(F, N, Metas),
+    unique_fn_decl(F, N, ATs1, _),
     arrow_det_positions(ATs1, Positions),
     Positions \== [],
     maplist(assume_det_meta(ATs1, Positions), Metas, Upgraded),
@@ -232,20 +209,8 @@ body_determinism_assuming_proof(F, N, Proof) :-
     setup_call_cleanup(
         b_setval('$det_assume_stack', [F/N|St]),
         ( det_enforced_flag(F, N, Enf),
-          with_det_enforced(Enf,
-              clause_set_determinism_proof(Upgraded, ClauseProof)),
-          analysis_proof_verdict(ClauseProof, Det),
-          analysis_proof_requirements(ClauseProof, Bounds),
-          analysis_proof_certificates(ClauseProof, Certs),
-          analysis_proof_dependencies(ClauseProof, ClauseDeps),
-          analysis_term_dependencies(Upgraded, TermDeps),
-          append([[effect(F/N), decl(F/N), clause_set(F/N)],
-                  ClauseDeps, TermDeps], Ds0),
-          sort(Ds0, Deps),
-          Proof = analysis_proof(conditional_body(F/N), Det,
-                                 requirements(Bounds),
-                                 certificates(Certs),
-                                 dependencies(Deps)) ),
+          clause_set_subject_proof(conditional_body(F/N), F/N, Enf, Upgraded,
+                                   Proof) ),
         b_setval('$det_assume_stack', St)),
     analysis_cache_store(assume(F, N), Proof).
 
@@ -253,7 +218,7 @@ body_determinism_assuming_proof(F, N, Proof) :-
 %position, attach the det form of the declared arrow to the COPIED head var -
 %never the stored one:
 assume_det_meta(ATs1, Positions, Meta, Meta2) :- copy_term(Meta, Meta2),
-                                                 fun_meta_parts(Meta2, Args, _, _),
+                                                 Meta2 = fun_meta(Args, _, _),
                                                  maplist(bind_meta_param, Args, ATs1),
                                                  assume_det_positions(Positions, ATs1, Args).
 
@@ -526,7 +491,7 @@ pattern_entailed_by_type(Pat, T) :-
 %bare constants. The ctor_set dependency makes this snapshot honest when a
 %later declaration adds another constructor.
 pattern_entailed_by_type(Pat, T) :-
-    atom(T), \+ primitive_type(T), \+ wildcard_type_t(T),
+    atom(T), \+ primitive_type(T), \+ wildcard_type(T),
     analysis_emit(dependency(ctor_set(T))),
     findall(Ctor-Arity, member_ctor(T, Arity, Ctor), Keys0),
     sort(Keys0, [Ctor-Arity]),
@@ -570,7 +535,7 @@ bind_destructured_field_types(Pat, Val) :-
     bind_pat_field_types(Pat, OT).
 
 bind_pat_field_types([], []).
-bind_pat_field_types([P|Ps], [T|Ts]) :- ( var(P), nonvar(T), \+ is_arrow_type(T), \+ wildcard_type_t(T)
+bind_pat_field_types([P|Ps], [T|Ts]) :- ( var(P), nonvar(T), \+ is_arrow_type(T), \+ wildcard_type(T)
                                           -> add_known_type(P, T) ; true ),
                                         bind_pat_field_types(Ps, Ts).
 
@@ -579,7 +544,7 @@ bind_plain_result_type(Pat, Val) :-
     call_output_type(Val, T),
     nonvar(T),
     \+ is_arrow_type(T),
-    \+ wildcard_type_t(T),
+    \+ wildcard_type(T),
     add_known_type(Pat, T).
 
 mark_field_unless_typed(V) :- ( get_attr(V, tknown, _) -> true ; note_unknown_candidate(V) ).
@@ -674,7 +639,7 @@ parsed_value_decl(ParsedForms, C, T) :- member(parsed(expression, _, _, Form), P
 
 stored_clause_head(F, N, Args) :- catch(nb_getval(F, Metas), _, fail),
                                   member(Meta, Metas),
-                                  fun_meta_parts(Meta, Args, _, _),
+                                  Meta = fun_meta(Args, _, _),
                                   length(Args, N).
 
 check_det_exhaustive_group(ParsedForms, Consts, F, N) :-
@@ -720,7 +685,7 @@ effect_det_exhaustiveness_required(ParsedForms, F, N) :-
               Head = [F0|Args], F0 == F, length(Args, N)
             ; catch(nb_getval(F, Stored), _, fail),
               member(Meta, Stored),
-              fun_meta_parts(Meta, Args, Body, _),
+              Meta = fun_meta(Args, Body, _),
               length(Args, N) ),
             Metas),
     Metas \== [],
@@ -735,7 +700,7 @@ effect_det_exhaustiveness_required(ParsedForms, F, N) :-
 %The declaration must be unique at this arity: several declarations are typed
 %overloads, and the clauses then belong to no single argument-type vector.
 check_det_exhaustive(Consts, F, N, Heads) :-
-    ( findall(ATs, fn_decl_arity(F, N, ATs, _), [ATs1]),
+    ( unique_fn_decl(F, N, ATs1, _),
       nth0(Idx, ATs1, T),
       unmatched_case(Consts, Heads, Idx, T, Missing)
       -> Pos is Idx + 1,
@@ -750,7 +715,7 @@ check_det_exhaustive(Consts, F, N, Heads) :-
 %the body and are never consulted (they can only make a function match LESS,
 %so ignoring them keeps the verdict sound).
 unmatched_case(Consts, Heads, Idx, T, Missing) :-
-    nonvar(T), \+ wildcard_type_t(T),
+    nonvar(T), \+ wildcard_type(T),
     findall(P, ( member(H, Heads), nth0(Idx, H, P) ), Col),
     Col \== [],
     maplist(pattern_key, Col, Keys),

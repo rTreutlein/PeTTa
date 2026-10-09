@@ -5,17 +5,32 @@
 % determinism proof walk.
 % Consumes the builtin registry, declaration/type queries, analysis proof and
 % validation interfaces, plus effect/coverage helpers from det_analysis.pl.
-% Boundary: procedural registry hooks stay here, but the fact that a builtin
-% uses one lives in builtin_registry.pl. Every owned predicate is wholly here.
-%
-%builtin_call_determinism/3 is keyed on (name, arity) only, so one worst-case
-%verdict has to cover every call site. Most of the weak verdicts above are
-%weak for a SHAPE reason - the argument may be unbound, or an open list - and
-%at a call site where the shape is manifest in the source the reason does not
-%apply. This relation is consulted BEFORE the flat table and may only ever
-%return a verdict at least as strong; where the shape cannot be established it
-%simply fails and the flat table answers, the same provable-only discipline
-%the -[det]-> exhaustiveness check uses.
+% Procedural registry hooks stay here, but the fact that a builtin uses one
+% lives in builtin_registry.pl.
+
+%The registry's flat cardinality is the checker's own knowledge of a builtin
+%and outranks any declaration of the same symbol, at a direct call, for a
+%value-position arrow head (value_arrow_head/4) and for the oracle's wrapping
+%decision (oracle_det_believed/3). The atom(F) guard keeps an unbound F from
+%enumerating the table.
+table_det_verdict(F, N, Det) :- atom(F), builtin_flat_cardinality(F, N, Det).
+
+table_det_override(F, N, Fallback, Det) :- ( table_det_verdict(F, N, DetB) -> Det = DetB ; Det = Fallback ).
+
+function_call_determinism(F, N, Det) :- table_det_verdict(F, N, Det), !.
+function_call_determinism(F, N, Det) :- catch(fn_determinism(F, N, Det0), _, fail),
+                                        Det0 \== unspecified, !, Det = Det0.
+function_call_determinism(F, N, Det) :-
+    ( inferred_unknown_call_determinism(F, N, Inferred)
+      -> Det = Inferred
+    ; Det = unspecified ).
+
+%The flat cardinality is keyed on (name, arity) only, so one worst-case verdict
+%covers every call site. Most weak verdicts are weak for a SHAPE reason - the
+%argument may be unbound, or an open list - which a call site whose shape is
+%manifest in the source rules out. builtin_call_determinism_args/4 is
+%consulted first and only ever returns a verdict at least as strong; where the
+%shape cannot be established it fails and the flat table answers.
 %
 %The judgements are about the SPINE, never the elements: a manifest list may
 %hold unbound elements, and a builtin that raises on one (min_list/2 on a
@@ -23,7 +38,7 @@
 call_site_determinism(F, N, Args, Det) :-
     call_site_base_determinism(F, N, Args, Base),
     ( trusted_unverified_call(F, Args)
-      -> call_effect_join(Base, semidet, Det)
+      -> effect_join(Base, semidet, Det)
     ; Det = Base ).
 
 call_site_base_determinism(F, N, Args, Det) :- builtin_call_determinism_args(F, N, Args, Det), !.
@@ -44,39 +59,27 @@ call_site_base_determinism(F, N, Args, Det) :-
 %several non-overlapping heads. Combine the body proof with a call-site
 %selection proof instead of publishing the former as the latter.
 inferred_call_determinism(F, N, Args, Det) :-
-    catch(nb_getval(F, Metas0), _, fail),
-    include(arity_meta(N), Metas0, Metas),
-    Metas \== [],
+    fun_metas(F, N, Metas),
     body_determinism(F, N, BodyDet),
     inferred_selection_determinism(F, N, Args, Metas, SelectionDet),
-    call_effect_join(BodyDet, SelectionDet, Det).
+    effect_join(BodyDet, SelectionDet, Det).
 
 %The argument-independent view used for a named function value has no future
 %call site from which to learn boundness.  It therefore needs a proof over the
 %whole input domain; probing the relation once with fresh variables is not
 %such a proof (a single partial clause would look exactly-one).
 inferred_unknown_call_determinism(F, N, Det) :-
-    catch(nb_getval(F, Metas0), _, fail),
-    include(arity_meta(N), Metas0, Metas),
-    Metas \== [],
+    fun_metas(F, N, Metas),
     body_determinism(F, N, BodyDet),
     inferred_total_selection_determinism(F, N, Metas, SelectionDet),
-    call_effect_join(BodyDet, SelectionDet, Det).
-
-call_effect_join(unspecified, _, unspecified) :- !.
-call_effect_join(_, unspecified, unspecified) :- !.
-call_effect_join(nondet, _, nondet) :- !.
-call_effect_join(_, nondet, nondet) :- !.
-call_effect_join(semidet, _, semidet) :- !.
-call_effect_join(_, semidet, semidet) :- !.
-call_effect_join(det, det, det).
+    effect_join(BodyDet, SelectionDet, Det).
 
 %First exploit values whose applicability is already decidable at the source
 %call site. Otherwise a multi-clause relation is at most-one only when one
 %bound argument position carries distinct top-level head keys. It is
 %exactly-one when those keys also cover that argument's known domain.
 inferred_selection_determinism(F, N, Args, Metas, Det) :-
-    ( member(MetaWithGoals, Metas), fun_meta_head_goals(MetaWithGoals)
+    ( member(MetaWithGoals, Metas), MetaWithGoals = fun_meta(_, _, head_goals)
       -> Det = unspecified
     ; maplist(call_head_status(Args), Metas, Statuses),
       ( memberchk(unknown, Statuses)
@@ -112,7 +115,7 @@ inferred_selection_statuses(F, N, Args, Metas, Statuses, Det) :-
 single_possible_domain_covered(Args, Metas, Statuses) :-
     nth0(MetaIndex, Statuses, possible),
     nth0(MetaIndex, Metas, Meta),
-    fun_meta_parts(Meta, HeadArgs, _, _),
+    Meta = fun_meta(HeadArgs, _, _),
     nth0(Idx, Args, Arg),
     var(Arg), nonempty_var(Arg),
     known_singleton(Arg, T), nonvar(T), list_type(T, _),
@@ -132,7 +135,7 @@ call_other_positions_yes([A|As], [P|Ps], Skip, I) :-
 %deliberately a small, provable-only relation: a universal head, or a complete
 %constructor/literal discriminator with otherwise-unconstrained positions.
 inferred_total_selection_determinism(_, _, Metas, unspecified) :-
-    member(Meta, Metas), fun_meta_head_goals(Meta), !.
+    member(Meta, Metas), Meta = fun_meta(_, _, head_goals), !.
 inferred_total_selection_determinism(_, _, Metas, nondet) :-
     selection_heads_overlap(Metas), !.
 inferred_total_selection_determinism(F, N, Metas, det) :-
@@ -141,13 +144,13 @@ inferred_total_selection_determinism(_, _, _, semidet).
 
 selection_heads_overlap(Metas) :-
     append(_, [M1|Rest], Metas),
-    fun_meta_parts(M1, A1, _, _),
+    M1 = fun_meta(A1, _, _),
     member(M2, Rest),
-    fun_meta_parts(M2, A2, _, _),
+    M2 = fun_meta(A2, _, _),
     clause_heads_overlap(A1, A2), !.
 
 total_selection_heads(_, _, [Meta]) :-
-    fun_meta_parts(Meta, Args, _, _),
+    Meta = fun_meta(Args, _, _),
     maplist(var, Args), !.
 total_selection_heads(F, N, Metas) :-
     keyed_head_column(Metas, Idx, Keys),
@@ -159,10 +162,10 @@ total_selection_heads(F, N, Metas) :-
 
 keyed_head_column(Metas, Idx, Keys) :-
     Metas = [First|_],
-    fun_meta_parts(First, Args, _, _),
+    First = fun_meta(Args, _, _),
     nth0(Idx, Args, _),
     findall(P, (member(Meta, Metas),
-                fun_meta_parts(Meta, HArgs, _, _),
+                Meta = fun_meta(HArgs, _, _),
                 nth0(Idx, HArgs, P)), Col),
     maplist(selection_pattern_key, Col, Keys),
     sort(Keys, Unique),
@@ -179,19 +182,19 @@ selection_pattern_covers_key(P) :-
 
 all_other_head_positions_unconstrained(Metas, Idx) :-
     forall(( member(Meta, Metas),
-             fun_meta_parts(Meta, Args, _, _),
+             Meta = fun_meta(Args, _, _),
              nth0(J, Args, P), J =\= Idx ),
            var(P)).
 
 selection_function_arg_type(F, N, Idx, T) :-
-    findall(ATs, fn_decl_arity(F, N, ATs, _), [ATs]), !,
+    unique_fn_decl(F, N, ATs, _), !,
     nth0(Idx, ATs, T).
 selection_function_arg_type(F, N, Idx, T) :-
     findall(ATs, (inferred_fn_type(F, ATs, _), length(ATs, N)), [ATs]),
     nth0(Idx, ATs, T).
 
 call_head_status(Args, Meta, Status) :-
-    fun_meta_parts(Meta, HeadArgs, _, _),
+    Meta = fun_meta(HeadArgs, _, _),
     maplist(call_pattern_status, Args, HeadArgs, PosStatuses),
     combine_pattern_statuses(PosStatuses, Status).
 
@@ -259,7 +262,7 @@ transformed_cons_pattern(P, H, T) :-
 keyed_selection_position(Args, Metas, Idx, Keys) :-
     nth0(Idx, Args, _),
     findall(P, (member(Meta, Metas),
-                fun_meta_parts(Meta, HArgs, _, _),
+                Meta = fun_meta(HArgs, _, _),
                 nth0(Idx, HArgs, P)), Col),
     Col \== [],
     maplist(selection_pattern_key, Col, Keys),
@@ -359,7 +362,7 @@ selection_argument_list_type(A) :-
 selection_argument_type(_, _, Args, Idx, T) :-
     nth0(Idx, Args, A), known_singleton(A, T0), nonvar(T0), !, T = T0.
 selection_argument_type(F, N, _, Idx, T) :-
-    findall(ATs, fn_decl_arity(F, N, ATs, _), [ATs]),
+    unique_fn_decl(F, N, ATs, _),
     nth0(Idx, ATs, T).
 
 selection_domain_keys('Bool', [key(true, 0), key(false, 0)]) :- !.
@@ -409,9 +412,8 @@ semidet_site_upgraded_to_det(Fun, N, Args) :-
     N =:= 1,
     nth0(Idx, Args, A), var(A), nonempty_var(A),
     known_singleton(A, T), nonvar(T), list_type(T, _),
-    findall(ATs, fn_decl_arity(Fun, N, ATs, _), [_]),
-    catch(nb_getval(Fun, Metas0), _, fail),
-    include(arity_meta(N), Metas0, Metas), Metas \== [],
+    unique_fn_decl(Fun, N, _, _),
+    fun_metas(Fun, N, Metas),
     nonempty_list_domain_covered(Metas, Idx),
     body_determinism(Fun, N, det).
 
@@ -421,7 +423,7 @@ semidet_site_upgraded_to_det(Fun, N, Args) :-
 %tail are both unconstrained variables (matches every list of length >= 1). A
 %pattern that pins the head or fixes the tail length covers only part of it.
 nonempty_list_domain_covered(Metas, Idx) :- member(Meta, Metas),
-                                            fun_meta_parts(Meta, HArgs, _, _),
+                                            Meta = fun_meta(HArgs, _, _),
                                             nth0(Idx, HArgs, P), covers_all_nonempty_lists(P), !.
 
 covers_all_nonempty_lists(P) :- var(P), !.
@@ -553,7 +555,7 @@ data_headed(H) :- atom(H), !, \+ fun(H).
 data_headed(H) :- is_list(H), H = [F|Fargs], !,
                   ( data_headed(F) -> true
                   ; atom(F), fun(F), length(Fargs, N),
-                    findall(OT, fn_decl_arity(F, N, _, OT), [OT1]),
+                    unique_fn_decl(F, N, _, OT1),
                     nonvar(OT1), nonfunction_type(OT1) ).
 data_headed(_).
 
@@ -613,8 +615,8 @@ manifest_bool(X) :- var(X), !, enforced_bound_param(X), known_singleton(X, 'Bool
 %their operands) is well-founded: operands are strict subterms.
 manifest_bool([F|As]) :- atom(F), is_list(As), length(As, N),
                          ( builtin_call_determinism_args(F, N, As, det) -> true
-                         ; builtin_call_determinism(F, N, det) ),
-                         findall(OT, fn_decl_arity(F, N, _, OT), [OT1]), OT1 == 'Bool'.
+                         ; builtin_flat_cardinality(F, N, det) ),
+                         unique_fn_decl(F, N, _, OT1), OT1 == 'Bool'.
 %A USER function call whose bound_bool certificate holds: every clause of it
 %provably results in a bound boolean, so the call cannot deliver the unbound
 %hole bool/1 would enumerate. The certificate, not the declaration, is what
@@ -716,7 +718,7 @@ output_cert_core(Kind, F, N, Stack, Verdict, Dependencies) :-
 cert_clause_bodies(F, N, Bodies) :-
     findall(B, ( catch(nb_getval(F, Ms), _, fail),
                  member(Meta, Ms),
-                 fun_meta_parts(Meta, As, B, _),
+                 Meta = fun_meta(As, B, _),
                  length(As, N) ), Rs),
     current_metta_file(File),
     findall(B, pending_clause_body(File, F, N, B), Ps),
@@ -751,8 +753,8 @@ clause_result_bool_core(Body, _, yes, [effect(F/N), decl(F/N)]) :-
     nonvar(Body), Body = [F|Args], atom(F), is_list(Args), length(Args, N),
     \+ bool_logic_builtin(F),
     ( builtin_call_determinism_args(F, N, Args, det)
-    ; builtin_call_determinism(F, N, det) ),
-    findall(OT, fn_decl_arity(F, N, _, OT), [OT1]), OT1 == 'Bool', !.
+    ; builtin_flat_cardinality(F, N, det) ),
+    unique_fn_decl(F, N, _, OT1), OT1 == 'Bool', !.
 clause_result_bool_core(Body, Stack, Verdict, Dependencies) :-
     nonvar(Body), Body = [If, _, T, E], If == if, !,
     output_result_qualifies_core(bound_bool, T, Stack, TV, TD),
@@ -795,8 +797,8 @@ cert_bool_value(A, _, yes, [effect(F/N), decl(F/N)]) :-
     nonvar(A), A = [F|Args], atom(F), is_list(Args), length(Args, N),
     \+ bool_logic_builtin(F),
     ( builtin_call_determinism_args(F, N, Args, det)
-    ; builtin_call_determinism(F, N, det) ),
-    findall(OT, fn_decl_arity(F, N, _, OT), [OT1]), OT1 == 'Bool', !.
+    ; builtin_flat_cardinality(F, N, det) ),
+    unique_fn_decl(F, N, _, OT1), OT1 == 'Bool', !.
 cert_bool_value(A, Stack, Verdict, Dependencies) :-
     nonvar(A), A = [G|GArgs], atom(G), is_list(GArgs), !,
     length(GArgs, N),
@@ -887,7 +889,7 @@ enforced_bound_tuple(X, W) :- var(X), enforced_bound_param(X),
 %(bodies deterministic, heads non-overlapping), memoized, and treated as det
 %on cycles (a recursive call cannot introduce what the rest disproves).
 %A registered symbol with no MeTTa clauses is a Prolog builtin, and the only
-%thing known about it is what builtin_call_determinism/3 records: everything
+%thing known about it is what builtin_flat_cardinality/3 records: everything
 %else is `unspecified`. Assuming det for a predicate nobody analysed is the
 %strongest claim available about the least visible code in the system, and it
 %certified -[det]-> functions whose bodies backtrack (see (get-atoms ...)).
@@ -907,7 +909,7 @@ body_determinism_proof(F, N, Proof) :-
     catch(nb_getval(F, Metas0), _, Metas0 = []),
     include(arity_meta(N), Metas0, Metas),
     ( Metas == []
-      -> ( builtin_call_determinism(F, N, Det0)
+      -> ( builtin_flat_cardinality(F, N, Det0)
            -> Det = Det0 ; Det = unspecified ),
          analysis_make_proof(body(F/N), Det, [],
                              [effect(F/N), decl(F/N)], Proof)
@@ -917,20 +919,7 @@ body_determinism_proof(F, N, Proof) :-
           with_compiling_caller(F, N,
           ( type_meta_params(F, N, Metas, Metas1),
             det_enforced_flag(F, N, Enf),
-            with_det_enforced(Enf,
-                clause_set_determinism_proof(Metas1, ClauseProof)),
-            analysis_proof_verdict(ClauseProof, Det),
-            analysis_proof_requirements(ClauseProof, Bounds),
-            analysis_proof_certificates(ClauseProof, Certs),
-            analysis_proof_dependencies(ClauseProof, ClauseDeps),
-            analysis_term_dependencies(Metas1, TermDeps),
-            append([[effect(F/N), decl(F/N), clause_set(F/N)],
-                    ClauseDeps, TermDeps], Ds0),
-            sort(Ds0, Deps),
-            Proof = analysis_proof(body(F/N), Det,
-                                   requirements(Bounds),
-                                   certificates(Certs),
-                                   dependencies(Deps)) )),
+            clause_set_subject_proof(body(F/N), F/N, Enf, Metas1, Proof) )),
           b_setval('$det_stack', St)),
       analysis_cache_store(det(F, N), Proof) ).
 
@@ -947,17 +936,22 @@ body_determinism_proof(F, N, Proof) :-
 %one), mirroring clause_param_types, so the transitive analysis agrees with
 %the direct one. Arrow parameters keep their declared arrow - a plain -> stays
 %unspecified in every mode but --strict-det, exactly as before:
-type_meta_params(F, N, Metas, Metas1) :- ( findall(ATs, fn_decl_arity(F, N, ATs, _), [ATs1])
+type_meta_params(F, N, Metas, Metas1) :- ( unique_fn_decl(F, N, ATs1, _)
                                            -> maplist(type_one_meta(ATs1), Metas, Metas1)
                                             ; Metas1 = Metas ).
 
 type_one_meta(ATs1, Meta, Meta2) :- copy_term(Meta, Meta2),
-                                    fun_meta_parts(Meta2, Args, _, _),
+                                    Meta2 = fun_meta(Args, _, _),
                                     maplist(bind_meta_param, Args, ATs1).
 
 bind_meta_param(Arg, T) :- ignore(catch(bind_pattern_typed(Arg, T), _, true)).
 
-arity_meta(N, Meta) :- fun_meta_parts(Meta, Args, _, _), length(Args, N).
+arity_meta(N, Meta) :- Meta = fun_meta(Args, _, _), length(Args, N).
+
+%The stored clause metadata of F/N; fails when it has no clauses:
+fun_metas(F, N, Metas) :- catch(nb_getval(F, Metas0), _, fail),
+                          include(arity_meta(N), Metas0, Metas),
+                          Metas \== [].
 
 %The worst verdict over ALL clause bodies decides (a may_fail clause followed
 %by a nondeterministic one is nondet, not semidet), and overlapping heads
@@ -966,6 +960,21 @@ clause_set_determinism(Metas, Det) :-
     clause_set_determinism_proof(Metas, Proof),
     analysis_proof_verdict(Proof, Det),
     analysis_reemit_proof(Proof).
+
+%The proof of Subject, a property of F/N established by its clause set Metas
+%analysed under the commitment gate Enf:
+clause_set_subject_proof(Subject, F/N, Enf, Metas, Proof) :-
+    with_det_enforced(Enf, clause_set_determinism_proof(Metas, ClauseProof)),
+    analysis_proof_verdict(ClauseProof, Det),
+    analysis_proof_requirements(ClauseProof, Bounds),
+    analysis_proof_certificates(ClauseProof, Certs),
+    analysis_proof_dependencies(ClauseProof, ClauseDeps),
+    analysis_term_dependencies(Metas, TermDeps),
+    append([[effect(F/N), decl(F/N), clause_set(F/N)], ClauseDeps, TermDeps],
+           Ds0),
+    sort(Ds0, Deps),
+    Proof = analysis_proof(Subject, Det, requirements(Bounds),
+                           certificates(Certs), dependencies(Deps)).
 
 clause_set_determinism_proof(Metas, Proof) :-
     analysis_collect(clause_set_determinism_core(Metas, Det), Events),
@@ -987,16 +996,16 @@ clause_bodies_determinism([], ok).
 %analysis (see with_det_head_vars/2): a wildcard-typed parameter has no type
 %attribute, so identity against the head is what tells it from a fresh local.
 clause_bodies_determinism([Meta|Ms], R) :-
-                                                     fun_meta_parts(Meta, Args, B, _),
+                                                     Meta = fun_meta(Args, B, _),
                                                      with_det_head_vars(Args, B, deterministic_expr_core(B, R1)),
                                                      ( det_result_final(R1) -> R = R1
                                                      ; clause_bodies_determinism(Ms, R2),
                                                        combine_det_results(R1, R2, R) ).
 
 overlapping_meta_pair(Metas) :- append(_, [Meta1|Rest], Metas),
-                                fun_meta_parts(Meta1, A1, _, _),
+                                Meta1 = fun_meta(A1, _, _),
                                 member(Meta2, Rest),
-                                fun_meta_parts(Meta2, A2, B2, _),
+                                Meta2 = fun_meta(A2, B2, _),
                                 clause_heads_overlap(A1, A2),
                                 \+ body_commits(B2),
                                 \+ body_conditionally_commits(B2).
@@ -1022,7 +1031,7 @@ deterministic_expr_core([Head|Args], Result) :- var(Head), !,
          %Atom/%Undefined%/Expression admit function symbols, and a var of
          %such a type bound to one at runtime makes reduce/2 DISPATCH the
          %"data" this analysis said it was building:
-         ; \+ is_arrow_type(K), \+ wildcard_type_t(K) -> combine_determinism_list(Args, Result)
+         ; \+ is_arrow_type(K), \+ wildcard_type(K) -> combine_determinism_list(Args, Result)
          ; Result = unknown(dynamic_head(Head)) )
        ; Result = unknown(dynamic_head(Head)) ).
 deterministic_expr_core([collapse, _], ok) :- !.
@@ -1111,7 +1120,7 @@ deterministic_expr_core(['foldall', _, _, _], ok) :- !.
 %
 %Only the first form had clauses, so every closure-form call fell through to
 %deterministic_call_expr/2, where the three are deliberately unlisted in
-%builtin_call_determinism/3 ("their determinism is that of the closure they
+%builtin_flat_cardinality/3 ("their determinism is that of the closure they
 %are given, which this table cannot express") and therefore `unspecified`.
 %That is what rejected lib_he's for-each-in-atom under --strict-det.
 %
@@ -1220,7 +1229,7 @@ unify_operand_determinism(E, R) :- deterministic_expr_core(E, R).
 %(= 1 ($f 0)) with $f an Atom-typed parameter read as data while the compiled
 %reduce dispatched whatever function the caller passed.
 unify_head_is_data(H) :- ( known_singleton(H, K), nonvar(K)
-                           -> \+ is_arrow_type(K), \+ wildcard_type_t(K)
+                           -> \+ is_arrow_type(K), \+ wildcard_type(K)
                          ; det_head_var(H) -> fail
                          ; \+ get_attr(H, tknown, _) ).
 

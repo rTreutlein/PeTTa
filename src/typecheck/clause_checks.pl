@@ -31,7 +31,7 @@ bind_param_type(Arg, T) :- ( functional_pattern_application(Arg, _, _)
                            -> ( functional_pattern_signature(Arg, T, PatternArgs, ArgTypes)
                                 -> maplist(bind_param_type, PatternArgs, ArgTypes)
                               ; true )
-                           ; var(Arg) -> ( nonvar(T) -> ( \+ wildcard_type_t(T) -> add_known_type(Arg, T)
+                           ; var(Arg) -> ( nonvar(T) -> ( \+ wildcard_type(T) -> add_known_type(Arg, T)
                                                                                   ; true )
                                            %a variable type is the declaration instance: recording it
                                            %lets identical unknowns be recognized (e.g. rcons's $a):
@@ -43,7 +43,7 @@ bind_param_type(Arg, T) :- ( functional_pattern_application(Arg, _, _)
                              -> bind_pattern_typed(Arg, T)
                            ; structural_pattern_fields(Arg, T, Fields, FieldTs)
                              -> maplist(bind_param_type, Fields, FieldTs)
-                           ; atom(T), declared_newtype(T, R), \+ wildcard_type_t(R)
+                           ; atom(T), declared_newtype(T, R), \+ wildcard_type(R)
                              -> bind_param_type(Arg, R)
                            ; is_list(Arg), is_list(T), same_length(Arg, T),
                              \+ is_arrow_type(T)                 %untagged tuple types: ($v Number)
@@ -59,8 +59,7 @@ bind_param_type(Arg, T) :- ( functional_pattern_application(Arg, _, _)
 functional_pattern_signature(Pattern, Expected, Args, ArgTypes) :-
     functional_pattern_application(Pattern, F, Args),
     length(Args, N),
-    findall(sig(ATs0, OT0), fn_decl_arity(F, N, ATs0, OT0),
-            [sig(ArgTypes, OutType)]),
+    unique_fn_decl(F, N, ArgTypes, OutType),
     type_unify(OutType, Expected),
     refine_functional_pattern_aliases(F, N, Expected, ArgTypes).
 
@@ -133,7 +132,7 @@ structural_pattern_fields(Arg, T, Fields, FieldTs) :- is_list(Arg), Arg = [Tag|F
                                                       ( tagged_tuple_type(T, Tag2, FieldTs), Tag2 == Tag,
                                                         same_length(Fields, FieldTs) -> true
                                                       ; atom(T), length(Fields, N),
-                                                        findall(ATs-OT, fn_decl_arity(Tag, N, ATs, OT), [FieldTs-OT1]),
+                                                        unique_fn_decl(Tag, N, FieldTs, OT1),
                                                         type_compat_soft(OT1, T) ).
 
 %Contextual output typing for deliberately-undeclared builtins (one clause per
@@ -173,7 +172,7 @@ builtin_contextual_output_rule(list_tail, [A], Out) :-
 %(where car-atom is det because its second clause answers () for anything the
 %first does not match, and last is semidet-or-worse for the empty list).
 list_elem_out_type(A, Out) :- ( var(Out), list_source_elem(A, T), nonvar(T),
-                                \+ wildcard_type_t(T)
+                                \+ wildcard_type(T)
                                 -> set_out_type(Out, T) ; true ).
 
 %An expression's tail is always a sequence, so cdr-atom keeps the (List ...)
@@ -200,7 +199,7 @@ first_list_out_type(A, Out) :- ( var(Out), list_source_elem(A, T)
 %UNKNOWN type still yields no claim: unknown is not evidence of anything, a
 %union member included.
 cons_out_type(H, Tl, Out) :- ( var(Out), list_source_elem(Tl, T)
-                               -> ( ( wildcard_type_t(T) -> true    %(List %Undefined%): any head fits
+                               -> ( ( wildcard_type(T) -> true    %(List %Undefined%): any head fits
                                     ; var(H) -> known_singleton(H, K), type_unify(K, T)
                                               ; check_value(H, T, St), St == ok )
                                     -> set_out_type(Out, ['List', T])
@@ -274,7 +273,7 @@ bind_pattern_typed(P, T, Prior) :-
                               -> ( functional_pattern_signature(P, T, PatternArgs, ArgTypes)
                                    -> maplist(bind_pattern_typed, PatternArgs, ArgTypes)
                                  ; true )
-                            ; var(P) -> ( nonvar(T), \+ wildcard_type_t(T)
+                            ; var(P) -> ( nonvar(T), \+ wildcard_type(T)
                                          -> variable_fallthrough_type(T, Prior, PT),
                                             add_known_type(P, PT)
                                           ; true )
@@ -292,7 +291,7 @@ bind_pattern_typed(P, T, Prior) :-
                                  bind_pattern_typed(Rest, ['List', ET])
                             ; structural_pattern_fields(P, T, Fields, FieldTs)
                               -> maplist(bind_pattern_typed, Fields, FieldTs)
-                            ; atom(T), declared_newtype(T, R), \+ wildcard_type_t(R)
+                            ; atom(T), declared_newtype(T, R), \+ wildcard_type(R)
                               -> bind_pattern_typed(P, R, Prior)
                             ; is_list(P), is_list(T), same_length(P, T),
                               \+ is_arrow_type(T)
@@ -430,7 +429,7 @@ union_members_excluded([M|Ms], N, Prior) :-
 %symbol/effect dependency and the graph revisits it.
 member_ctor(M, K, C) :- declared_fn_type(C, ATs, OT, _), length(ATs, K),
                         \+ fun(C),
-                        nonvar(OT), \+ wildcard_type_t(OT), type_compat_soft(OT, M).
+                        nonvar(OT), \+ wildcard_type(OT), type_compat_soft(OT, M).
 
 %An earlier branch consumed EVERY (Ctor V1 ... Vk) value: its pattern is
 %headed by Ctor at that arity and its arguments are distinct variables, so the
@@ -454,7 +453,7 @@ clause_output_goals(F, out(OT, ATs), Args, ExpOut, BodyExpr, Gs) :-
         ( var(OT) -> ( term_variables(ATs, Vs), \+ memberchk_eq(OT, Vs)
                        -> parametric_output_check(F, ExpOut) ; true ),
                      Gs = []
-        ; wildcard_type_t(OT) -> Gs = []
+        ; wildcard_type(OT) -> Gs = []
         ; nonvar(BodyExpr), BodyExpr = [Q, QV], Q == quote, \+ atomic(QV)
           -> with_quoted_declared_params(
                  Args, ATs,
@@ -494,7 +493,7 @@ quoted_structural_value_status(Value, T, Status) :-
          ; Status = mismatch )
     ; Status = unknown ).
 quoted_structural_value_status(_, T, ok) :-
-    wildcard_type_t(T), !.
+    wildcard_type(T), !.
 quoted_structural_value_status(Value, T, Status) :-
     is_union(T), !, T = ['|'|Members],
     quoted_union_status(Value, Members, Status).
@@ -513,7 +512,7 @@ quoted_structural_value_status(Value, T, Status) :-
     atom(T), declared_newtype(T, Representation), !,
     quoted_structural_value_status(Value, Representation, Status).
 quoted_structural_value_status(Value, T, Status) :-
-    atom(T), \+ primitive_type(T), \+ wildcard_type_t(T),
+    atom(T), \+ primitive_type(T), \+ wildcard_type(T),
     structural_pattern_fields(Value, T, Fields, FieldTs), !,
     quoted_fields_status(Fields, FieldTs, Status).
 quoted_structural_value_status(Value, T, Status) :-

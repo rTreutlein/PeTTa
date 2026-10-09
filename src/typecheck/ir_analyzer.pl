@@ -759,7 +759,7 @@ merge_exclusive_outs(out(yes, _, Card, State, EffectsA, ObligationsA,
                          DiagnosticsB, TraceB), Result,
                      out(yes, Result, JoinedCard, State, Effects, Obligations,
                          Diagnostics, Trace)) :- !,
-    card_exclusive(Card, card(0,0), JoinedCard),
+    card_join(Card, card(0,0), JoinedCard),
     merge_lists(EffectsA, EffectsB, Effects),
     merge_lists(ObligationsA, ObligationsB, Obligations),
     merge_lists(DiagnosticsA, DiagnosticsB, Diagnostics),
@@ -773,7 +773,7 @@ merge_exclusive_outs(out(yes, _, CardA, StateA, EffectsA, ObligationsA,
                          DiagnosticsB, TraceB), Result,
                      out(yes, Result, Card, State, Effects, Obligations,
                          Diagnostics, Trace)) :-
-    card_exclusive(CardA, CardB, Card),
+    card_join(CardA, CardB, Card),
     state_join(StateA, StateB, State),
     merge_lists(EffectsA, EffectsB, Effects),
     merge_lists(ObligationsA, ObligationsB, Obligations),
@@ -977,19 +977,19 @@ inconsistent_value(State, Id) :-
     state_fact_matches(State, Id, literal(Value)),
     state_fact_matches(State, Id, domain(Domain)),
     ground(Value), ground(Domain),
-    \+ variant_member_local(Value, Domain), !.
+    \+ variant_member(Value, Domain), !.
 
 state_value_id(state(Entries), Id) :- member(entry(Id, _), Entries).
 
 domain_all_excluded([], _).
 domain_all_excluded([Value|Values], Excluded) :-
-    variant_member_local(Value, Excluded),
+    variant_member(Value, Excluded),
     domain_all_excluded(Values, Excluded).
 
 state_domain_excludes(State, Id, Value) :-
     state_fact_matches(State, Id, domain(Domain)),
     ground(Domain),
-    \+ variant_member_local(Value, Domain).
+    \+ variant_member(Value, Domain).
 
 domain_exhausted_after(State, Id, ExtraExcluded) :-
     state_fact_matches(State, Id, domain(Domain)),
@@ -1035,14 +1035,6 @@ alias_one_way(State0, From, To, State) :-
     state_facts(State0, From, Facts),
     add_state_facts(Facts, To, State0, State).
 
-variant_dedup([], []).
-variant_dedup([X|Xs], Ys) :-
-    ( variant_member_local(X, Xs)
-      -> variant_dedup(Xs, Ys)
-    ; Ys = [X|Rest], variant_dedup(Xs, Rest) ).
-
-variant_member_local(X, [Y|_]) :- X =@= Y, !.
-variant_member_local(X, [_|Ys]) :- variant_member_local(X, Ys).
 
 
 % -- Context and definition helpers -------------------------------------

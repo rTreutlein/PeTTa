@@ -181,7 +181,7 @@ runtime_add_clause_ref(_, _, _).
                                        remove_sexp(Space, Term),
                                        catch(nb_getval(F, Prev), _, Prev = []),
                                        (   select(Meta, Prev, Rest),
-                                           fun_meta_parts(Meta, Args0, Body0, _),
+                                           Meta = fun_meta(Args0, Body0, _),
                                            Args0 =@= Args,
                                            Body0 =@= Body
                                            -> ( Rest == [] -> nb_delete(F)

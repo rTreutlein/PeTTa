@@ -9,10 +9,7 @@
 %
 % type_unify/2 binds type variables (polymorphism); wrap it in
 % type_compat_soft/2 for a side-effect-free check.
-wildcard_type('%Undefined%').
-wildcard_type('Atom').
-wildcard_type('Expression').
-wildcard_type_t(T) :- atom(T), wildcard_type(T).
+wildcard_type(T) :- atom(T), memberchk(T, ['%Undefined%', 'Atom', 'Expression']).
 
 type_unify(A, B) :- ( var(A) ; var(B) ), !, A = B.
 %A wildcard is NOT "every type at once" - it is "nothing is stated here". The
@@ -21,7 +18,7 @@ type_unify(A, B) :- ( var(A) ; var(B) ), !, A = B.
 %so the brand rules run BEFORE the wildcard shortcut and the shortcut never
 %sees a brand on either side. See brand_unify/2:
 type_unify(A, B) :- ( brand_name(A) ; brand_name(B) ), !, brand_unify(A, B).
-type_unify(A, B) :- ( wildcard_type_t(A) ; wildcard_type_t(B) ), !.
+type_unify(A, B) :- ( wildcard_type(A) ; wildcard_type(B) ), !.
 %Union types (| T1 T2 ...): a union value must fit every context member-wise;
 %a value fits a required union if it fits some member:
 type_unify(A, B) :- is_union(A), !, A = ['|'|As],
@@ -70,12 +67,12 @@ brand_unify(A, B) :- brand_name(B), !,
                      %mirroring the is_union(A) rule below; nothing else does:
                      is_union(A), A = ['|'|As],
                      \+ ( member(MA, As), \+ type_compat_soft(MA, B) ).
-brand_unify(_, B) :- wildcard_type_t(B), !.
+brand_unify(_, B) :- wildcard_type(B), !.
 brand_unify(A, B) :- is_union(B), !, B = ['|'|Ms], member(M, Ms), type_unify(A, M), !.
 brand_unify(A, B) :-
     atom(A),
     analysis_emit(dependency(declaration(newtype, A))),
-    declared_newtype(A, RA), \+ wildcard_type_t(RA), type_unify(RA, B).
+    declared_newtype(A, RA), \+ wildcard_type(RA), type_unify(RA, B).
 
 %A closure fits a required arrow when it can produce no MORE results than the
 %requirement allows (det < semidet < nondet). A plain requirement is
@@ -121,9 +118,6 @@ mreq:attr_unify_hook(Rs, Other) :-
 %attribute propagates through the copies made by nested let/let* analysis.
 proper_list_cert:attr_unify_hook(true, Other) :-
     ( var(Other) -> put_attr(Other, proper_list_cert, true) ; true ).
-
-variant_member(X, [Y|_]) :- X =@= Y, !.
-variant_member(X, [_|T]) :- variant_member(X, T).
 
 variant_union([], Ys, Ys).
 variant_union([X|Xs], Ys, U) :- ( variant_member(X, Ys) -> variant_union(Xs, Ys, U)
@@ -278,7 +272,7 @@ note_certifiable_literal(V, Val) :- ( var(V)
 %residual checks, while an ascription is an explicit, visible boundary.
 %An ascription that contradicts static knowledge is a compile-time error.
 ascribe_type(V, T, Gs) :- ( var(T) -> Gs = []
-                          ; wildcard_type_t(T) -> Gs = []
+                          ; wildcard_type(T) -> Gs = []
                           ; var(V) ->
                               %an unknown branch fed this value, but the
                               %ascription's own runtime guard establishes T
@@ -362,7 +356,7 @@ brand_candidate_fits_representation(R, C) :-
     brand_evidence_fits_representation(Evidence, R).
 
 brand_evidence_fits_representation(unknown, R) :-
-    wildcard_type_t(R).
+    wildcard_type(R).
 brand_evidence_fits_representation(literal(V), R) :-
     check_value(V, R, St),
     St == ok.
@@ -402,14 +396,14 @@ type_match_pattern(P) :- ( is_list(P) -> type_match_pattern_list(P) ; true ).
 
 type_match_pattern_list([C, V, Ty]) :- C == (:), var(V), nonvar(Ty), !,
                                        normalize_type(Ty, TN),
-                                       ( \+ wildcard_type_t(TN) -> add_known_type(V, TN) ; true ).
+                                       ( \+ wildcard_type(TN) -> add_known_type(V, TN) ; true ).
 type_match_pattern_list([C|Ps]) :- C == ',', !, maplist(type_match_pattern, Ps).
 type_match_pattern_list([F|Args]) :- atom(F), length(Args, N),
-                                     findall(ATs, fn_decl_arity(F, N, ATs, _), [ATs1]), !,
+                                     unique_fn_decl(F, N, ATs1, _), !,
                                      maplist(bind_pattern_arg, Args, ATs1).
 type_match_pattern_list(_).
 
-bind_pattern_arg(V, T) :- var(V), !, ( nonvar(T), \+ wildcard_type_t(T) -> add_known_type(V, T) ; true ).
+bind_pattern_arg(V, T) :- var(V), !, ( nonvar(T), \+ wildcard_type(T) -> add_known_type(V, T) ; true ).
 bind_pattern_arg(A, _) :- type_match_pattern(A).
 
 %Type the element variable of a higher-order construct from its list argument:
@@ -426,15 +420,15 @@ list_elem_type(L, ET) :- is_list(L), L = [E|Es],
 
 add_known_types(V, Cs) :- maplist(add_known_type(V), Cs).
 
-set_out_type(Out, OT) :- ( var(Out), nonvar(OT), \+ wildcard_type_t(OT) -> add_known_type(Out, OT)
+set_out_type(Out, OT) :- ( var(Out), nonvar(OT), \+ wildcard_type(OT) -> add_known_type(Out, OT)
                                                                           ; true ).
 
 %When F/N has exactly one declared output type, the call result is that type:
-set_unique_decl_out(F, N, Out) :- ( atom(F), findall(OT, fn_decl_arity(F, N, _, OT), [OT1])
+set_unique_decl_out(F, N, Out) :- ( atom(F), unique_fn_decl(F, N, _, OT1)
                                     -> set_out_type(Out, OT1) ; true ).
 
 manual_dispatch_arg_checks_status(F, N, AVs, Gs, Status) :-
-    ( atom(F), findall(ATs, fn_decl_arity(F, N, ATs, _), [ATs1])
+    ( atom(F), unique_fn_decl(F, N, ATs1, _)
       -> apply_call_args_status(declared, F, AVs, ATs1, Gs, Status)
     ; Gs = [], Status = verified ).
 

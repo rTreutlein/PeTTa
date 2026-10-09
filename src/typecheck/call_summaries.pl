@@ -29,6 +29,8 @@ immutable domain's non-binding exact lookup while still allowing guarded
 summaries to inspect a literal payload.
 */
 
+:- use_module(abstract_domain).
+
 :- meta_predicate mode_applicable(+, 2, -).
 :- meta_predicate select_builtin_mode(+, +, 2, -, -, -).
 :- discontiguous builtin_mode/6.
@@ -314,7 +316,7 @@ validate_row(Key, Preconditions, Postconditions, Card, Effects, Priority) :-
     validate_guard_scope(Key, Preconditions),
     summary_assert(is_list(Postconditions), bad_postconditions(Key, Postconditions)),
     maplist(validate_postcondition(Key), Postconditions),
-    summary_assert(valid_card(Card), bad_cardinality(Key, Card)),
+    summary_assert(once(card_level(Card, _)), bad_cardinality(Key, Card)),
     summary_assert(is_list(Effects), bad_effects(Key, Effects)),
     maplist(validate_effect(Key), Effects),
     summary_assert(integer(Priority), bad_priority(Key, Priority)).
@@ -369,11 +371,6 @@ validate_postcondition(Key, Postcondition) :-
 valid_target(_, result).
 valid_target(_/Arity, arg(Index)) :-
     integer(Index), Index >= 0, Index < Arity.
-
-valid_card(card(Lower, Upper)) :-
-    memberchk(Lower, [0, 1]),
-    ( Upper == many
-    ; memberchk(Upper, [0, 1]), Upper >= Lower ).
 
 validate_effect(Key, Effect) :-
     summary_assert(known_effect(Effect), bad_effect(Key, Effect)).
