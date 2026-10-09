@@ -1500,7 +1500,7 @@ cmp_native('!=', A, B, (A \== B)).
 %Generate actual function call or partial if arity not complete:
 build_call_or_partial(Fun, AVs, Out, Inner, Extra, Goals) :- ( maybe_specialize_call(Fun, AVs, Out, Goal)
                                                                -> oracle_det_wrap(Fun, AVs, Out, Goal, Goal1),
-                                                                  append(Inner, [Goal1|Extra], Goals)
+                                                                  append(Inner, [catch(call(Goal1), _, fail)|Extra], Goals)
                                                                 ; build_direct_call(Fun, AVs, Out, Inner, Extra, Goals) ).
 
 build_direct_call(Fun, AVs, Out, Inner, Extra, Goals) :- length(AVs, N),
