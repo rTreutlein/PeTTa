@@ -55,6 +55,8 @@ parse(Str, R) :- sread(Str, R).
 '%'(A,B,R)  :- R is A mod B.
 '<'(A,B,R)  :- (A<B -> R=true ; R=false).
 '>'(A,B,R)  :- (A>B -> R=true ; R=false).
+'@<'(A,B,R) :- (A@<B -> R=true ; R=false).
+'@>'(A,B,R) :- (A@>B -> R=true ; R=false).
 '=='(A,B,R) :- (A==B -> R=true ; R=false).
 '!='(A,B,R) :- (A==B -> R=false ; R=true).
 '='(A,B,R) :-  (A=B -> R=true ; R=false).
@@ -63,6 +65,8 @@ parse(Str, R) :- sread(Str, R).
 '=@='(A,B,R) :- (A =@= B -> R=true ; R=false).
 '<='(A,B,R) :- (A =< B -> R=true ; R=false).
 '>='(A,B,R) :- (A >= B -> R=true ; R=false).
+'@<='(A,B,R) :- (A @=< B -> R=true ; R=false).
+'@>='(A,B,R) :- (A @>= B -> R=true ; R=false).
 min(A,B,R)  :- R is min(A,B).
 max(A,B,R)  :- R is max(A,B).
 exp(Arg,R) :- R is exp(Arg).
@@ -403,7 +407,7 @@ register_fun(N) :- assertz(fun(N)),
                    forall((current_predicate(N/Arity), \+ (current_op(_, _, N), Arity =< 2)),
                           (arity(N, Arity) -> true ; assertz(arity(N, Arity)))).
 :- maplist(register_fun, [superpose, empty, let, 'let*', '+','-','*','/', '%', min, max, 'change-state!', 'get-state', 'bind!',
-                          '<','>','==', '!=', '=', '=?', '<=', '>=', and, or, xor, implies, not, sqrt, exp, log, cos, sin,
+                          '<','>','@<', '@>', '==', '!=', '=', '=?', '<=', '>=', '@<=', '@>=', and, or, xor, implies, not, sqrt, exp, log, cos, sin,
                           'first-from-pair', 'second-from-pair', 'car-atom', 'cdr-atom', 'unique-atom', 'alpha-unique-atom',
                           repr, repra, parse, 'println!', 'readln!', test, assert, 'mm2-exec', atom_concat, atom_chars, copy_term, term_hash,
                           foldl, first, last, append, length, 'size-atom', sort, msort, member, 'is-member', 'is-alpha-member', 'exclude-item', list_to_set, maplist, eval, reduce, 'import!',
