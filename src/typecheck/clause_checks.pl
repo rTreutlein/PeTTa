@@ -489,7 +489,7 @@ quoted_structural_type(_, 'Expression').
 %for this output check only.
 with_quoted_declared_params(Args, Types, Goal) :-
     quoted_param_pairs(Args, Types, Pairs),
-    ( catch(b_getval('$quoted_declared_params', Saved), _, fail) -> true
+    ( nb_current('$quoted_declared_params', Saved) -> true
     ; Saved = [] ),
     setup_call_cleanup(
         b_setval('$quoted_declared_params', Pairs),
@@ -497,7 +497,7 @@ with_quoted_declared_params(Args, Types, Goal) :-
         b_setval('$quoted_declared_params', Saved)).
 
 quoted_declared_var_type(Value, Type) :-
-    catch(b_getval('$quoted_declared_params', Pairs), _, fail),
+    nb_current('$quoted_declared_params', Pairs),
     member(param(Param, Type), Pairs),
     Param == Value, !.
 

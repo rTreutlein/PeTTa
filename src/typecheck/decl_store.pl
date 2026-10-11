@@ -285,7 +285,7 @@ cache_fn_type_decl(Name, Type, ATs, OT, Det, Origin, Provenance) :-
     ; true ).
 
 decl_notify(_) :-
-    catch(b_getval('$suppress_decl_notifications', true), _, fail), !.
+    nb_current('$suppress_decl_notifications', true), !.
 decl_notify(Event) :-
     nb_current('$batched_decl_notifications', Events0), !,
     nb_setval('$batched_decl_notifications', [Event|Events0]).
@@ -313,7 +313,7 @@ flush_decl_notification_batch :-
     notify_mutations(Events).
 
 with_decl_notifications_suppressed(Goal) :-
-    catch(b_getval('$suppress_decl_notifications', Saved), _, Saved = false),
+    ( nb_current('$suppress_decl_notifications', Saved) -> true ; Saved = false ),
     setup_call_cleanup(b_setval('$suppress_decl_notifications', true),
                        Goal,
                        b_setval('$suppress_decl_notifications', Saved)).

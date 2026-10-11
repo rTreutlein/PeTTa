@@ -172,7 +172,7 @@ with_unified_preanalyzed_form(Goal) :-
     with_b_value('$unified_source_form', false, true, Goal).
 
 current_unified_clause_analysis(Source, IR, Env, Origins, Analysis) :-
-    catch(b_getval('$unified_current_clause', Record), _, fail),
+    nb_current('$unified_current_clause', Record),
     Record = clause_record(Source, IR, Env, Origins, Analysis).
 
 current_unified_source_variable(Var) :-
@@ -238,14 +238,14 @@ maybe_invalidate_active_scope(generated_specialization_removed(_)) :- !.
 % Ordinary source forms belong to the batch being compiled. Runtime mutation
 % from a runnable does not enter this scope and invalidates the generation.
 maybe_invalidate_active_scope(_) :-
-    catch(b_getval('$unified_source_form', true), _, fail), !.
+    nb_current('$unified_source_form', true), !.
 maybe_invalidate_active_scope(Event) :-
     bump_bridge_generation,
     record_nested_scope_mutation(Event).
 
 record_nested_scope_mutation(Event) :-
     raw_bridge_scope(_), !,
-    catch(b_getval('$unified_nested_mutations', Events0), _, Events0 = []),
+    ( nb_current('$unified_nested_mutations', Events0) -> true ; Events0 = [] ),
     b_setval('$unified_nested_mutations', [Event|Events0]).
 record_nested_scope_mutation(_).
 
@@ -1052,7 +1052,7 @@ typed_variable([typed(Stored, _)|_], Var) :- Stored == Var, !.
 typed_variable([_|Typed], Var) :- typed_variable(Typed, Var).
 
 current_inference_assumption(Var, Type) :-
-    catch(b_getval('$assumptions', Pairs), _, fail),
+    nb_current('$assumptions', Pairs),
     member(a(StoredVar, StoredType), Pairs),
     StoredVar == Var,
     StoredType == Type, !.
@@ -1144,11 +1144,11 @@ bridge_scope(Scope) :-
     Generation =:= Current.
 
 raw_bridge_scope(Scope) :-
-    catch(b_getval('$unified_checker_scope', Scope), _, fail),
+    nb_current('$unified_checker_scope', Scope),
     Scope = scope(_, _, _).
 
 current_bridge_generation(Generation) :-
-    ( catch(nb_getval('$unified_checker_generation', Stored), _, fail)
+    ( nb_current('$unified_checker_generation', Stored)
       -> Generation = Stored
     ; Generation = 0,
       nb_setval('$unified_checker_generation', Generation) ).
@@ -1161,7 +1161,7 @@ bump_bridge_generation :-
 %Run Goal with the backtrackable global Key set to Value, then restore the
 %outer value (Default when Key was unset).
 with_b_value(Key, Default, Value, Goal) :-
-    ( catch(b_getval(Key, Outer), _, fail) -> true ; Outer = Default ),
+    ( nb_current(Key, Outer) -> true ; Outer = Default ),
     setup_call_cleanup(b_setval(Key, Value), Goal, b_setval(Key, Outer)).
 
 with_bridge_scope(Scope, Goal) :-
@@ -1614,7 +1614,7 @@ test(branch_snapshot_preserves_external_open_type_identity,
     Restored == OpenType.
 
 test(reachable_branch_preserves_inference_requirement) :-
-    catch(b_getval('$assumptions', Saved0), _, Saved0 = []),
+    ( nb_current('$assumptions', Saved0) -> true ; Saved0 = [] ),
     setup_call_cleanup(
         b_setval('$assumptions', [a(Value, OpenType)]),
         ( branch_inference_updates(
@@ -1626,7 +1626,7 @@ test(reachable_branch_preserves_inference_requirement) :-
         b_setval('$assumptions', Saved0)).
 
 test(edge_type_is_not_promoted_to_inference_requirement) :-
-    catch(b_getval('$assumptions', Saved0), _, Saved0 = []),
+    ( nb_current('$assumptions', Saved0) -> true ; Saved0 = [] ),
     setup_call_cleanup(
         b_setval('$assumptions', [a(Value, OpenType)]),
         ( branch_inference_updates(

@@ -6,13 +6,13 @@
 %%% (indefinite_candidate/1), and (2) the compiler may not pin one by guessing,
 %%% as translate_closure_call/5 does for an unknown head. Scoped by b_setval so
 %%% an abandoned nested compile cannot leak its set.
-param_promises_scope(Promises, Outer) :- catch(b_getval('$param_promises', Outer), _, Outer = []),
+param_promises_scope(Promises, Outer) :- ( nb_current('$param_promises', Outer) -> true ; Outer = [] ),
                                          b_setval('$param_promises', Promises).
 
 param_promises_restore(Outer) :- b_setval('$param_promises', Outer).
 
 param_promise_var(V) :- var(V),
-                        catch(b_getval('$param_promises', Vs), _, fail),
+                        nb_current('$param_promises', Vs),
                         memberchk_eq(V, Vs).
 
 %After the body is translated, every snapshotted position must still be
@@ -59,9 +59,9 @@ strict_check_function_typed(F, Args) :- ( strict_mode(true), \+ sub_atom(F, 0, _
 inferred_decl_arity(F, N, ATs, OT) :- inferred_fn_type(F, ATs, OT), length(ATs, N).
 
 begin_clause_inference(F, Args, Assume, saved(OldA, OldD, OldT)) :-
-        catch(b_getval('$assumptions', OldA), _, OldA = []),
-        catch(b_getval('$assume_decl', OldD), _, OldD = none),
-        catch(b_getval('$assump_taint', OldT), _, OldT = []),
+        ( nb_current('$assumptions', OldA) -> true ; OldA = [] ),
+        ( nb_current('$assume_decl', OldD) -> true ; OldD = none ),
+        ( nb_current('$assump_taint', OldT) -> true ; OldT = [] ),
         length(Args, N),
         ( \+ \+ fn_decl_arity(F, N, _, _) -> Assume = none, Pairs = [], Decl = none
                                            ; foldl(assume_param_type, Args, t([], []), t(PairsR, PTsR)),
@@ -109,9 +109,9 @@ ctor_pattern_field_types(Arg) :- ( functional_pattern_application(Arg, _, _)
                                             error(literal_type_mismatch(_, _), typecheck), true)
                                     ; true ).
 
-taint_assumption(AV) :- ( catch(b_getval('$assumptions', Pairs), _, fail),
+taint_assumption(AV) :- ( nb_current('$assumptions', Pairs),
                           member(a(P, _), Pairs), P == AV
-                          -> catch(b_getval('$assump_taint', Ts), _, Ts = []),
+                          -> ( nb_current('$assump_taint', Ts) -> true ; Ts = [] ),
                              b_setval('$assump_taint', [AV|Ts])
                            ; true ).
 
@@ -122,10 +122,10 @@ end_clause_inference(F, Args, ExpOut, Assume, saved(OldA, OldD, OldT)) :-
         b_setval('$assump_taint', OldT).
 
 %The provisional declaration of the clause being translated, for self-recursion:
-assumed_self_decl(F, N, PTs, OutTv) :- catch(b_getval('$assume_decl', D), _, fail),
+assumed_self_decl(F, N, PTs, OutTv) :- nb_current('$assume_decl', D),
                                        D = d(F, N, PTs, OutTv).
 
-store_inferred_type(F, Pairs, Args, ExpOut) :- catch(b_getval('$assump_taint', Taints), _, Taints = []),
+store_inferred_type(F, Pairs, Args, ExpOut) :- ( nb_current('$assump_taint', Taints) -> true ; Taints = [] ),
                                                maplist(infer_param_type(Pairs, Taints), Args, ATs0),
                                                infer_out_type(ExpOut, OT0),
                                                maplist(normalize_inferred_param, ATs0, ATs1),

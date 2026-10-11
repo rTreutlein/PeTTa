@@ -137,7 +137,7 @@ runtime_source_key([Eq, [F|Args], _], F/N) :-
 %%Remove a function atom:
 'remove-atom'(Space, Term, Removed) :- Term = [=,[F|Args],Body], !,
                                        remove_sexp(Space, Term),
-                                       catch(nb_getval(F, Prev), _, Prev = []),
+                                       ( atom(F), nb_current(F, Prev) -> true ; Prev = [] ),
                                        (   select(Meta, Prev, Rest),
                                            Meta = fun_meta(Args0, Body0, _),
                                            Args0 =@= Args,
