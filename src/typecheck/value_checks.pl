@@ -362,7 +362,7 @@ open_nominal_atom_type(T) :-
     ( declared_value_type(_, T) ; member_ctor(T, _, _) ), !.
 
 with_open_nominal_intersections(Obligations, Goal) :-
-    ( catch(b_getval('$open_nominal_intersections', Saved), _, fail)
+    ( nb_current('$open_nominal_intersections', Saved)
       -> true
     ; Saved = [] ),
     setup_call_cleanup(
@@ -371,12 +371,12 @@ with_open_nominal_intersections(Obligations, Goal) :-
         b_setval('$open_nominal_intersections', Saved)).
 
 open_nominal_intersection_obligation(V, T) :-
-    catch(b_getval('$open_nominal_intersections', Obligations), _, fail),
+    nb_current('$open_nominal_intersections', Obligations),
     member(obligation(V0, T0), Obligations),
     V0 == V, T0 == T, !.
 
 open_nominal_intersection_types(V, Types) :-
-    catch(b_getval('$open_nominal_intersections', Obligations), _, fail),
+    nb_current('$open_nominal_intersections', Obligations),
     findall(T, (member(obligation(V0, T), Obligations), V0 == V), Ts0),
     sort(Ts0, Types).
 

@@ -87,12 +87,12 @@ analysis_memo_key_dependencies(output(Kind, F, N), Ds) :- !,
 analysis_memo_key_dependencies(_, []).
 
 analysis_emit(Event) :-
-    catch(b_getval('$analysis_event_stack', [Events|Outer]), _, fail), !,
+    nb_current('$analysis_event_stack', [Events|Outer]), !,
     b_setval('$analysis_event_stack', [[Event|Events]|Outer]).
 analysis_emit(_).
 
 analysis_collect(Goal, Events) :-
-    catch(b_getval('$analysis_event_stack', Stack0), _, Stack0 = []),
+    ( nb_current('$analysis_event_stack', Stack0) -> true ; Stack0 = [] ),
     setup_call_cleanup(
         b_setval('$analysis_event_stack', [[]|Stack0]),
         ( call(Goal),

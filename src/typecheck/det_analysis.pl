@@ -36,7 +36,7 @@ effect_body_determinism(F, N, Name, Det) :-
 effect_body_determinism_proof(F, N, Name, Proof) :-
     analysis_cache_lookup(effect(F, N, Name), Proof), !.
 effect_body_determinism_proof(F, N, Name, Proof) :-
-    catch(b_getval('$effect_assume_stack', St), _, St = []),
+    ( nb_current('$effect_assume_stack', St) -> true ; St = [] ),
     memberchk(effect(F, N, Name), St), !,
     analysis_make_proof(effect_body(F/N, Name), det, [],
                         [effect(F/N), decl(F/N), clause_set(F/N)], Proof).
@@ -44,7 +44,7 @@ effect_body_determinism_proof(F, N, Name, Proof) :-
     effect_poly_decl(F, N, Name, ATs, Positions),
     fun_metas(F, N, Metas),
     maplist(assume_det_meta(ATs, Positions), Metas, Upgraded),
-    catch(b_getval('$effect_assume_stack', St), _, St = []),
+    ( nb_current('$effect_assume_stack', St) -> true ; St = [] ),
     setup_call_cleanup(
         b_setval('$effect_assume_stack', [effect(F, N, Name)|St]),
         clause_set_subject_proof(effect_body(F/N, Name), F/N, enforced(F, N),
@@ -144,7 +144,7 @@ det_arg_evidence(Arg, M) :- closure_effect_level(Arg, M, det).
 
 %The named function's own full arity (declared, else from stored clauses):
 fn_own_arity(F2, A) :- fn_decl_arity(F2, A, _, _), !.
-fn_own_arity(F2, A) :- catch(nb_getval(F2, Metas), _, fail),
+fn_own_arity(F2, A) :- atom(F2), nb_current(F2, Metas),
                        member(Meta, Metas), Meta = fun_meta(As, _, _),
                        length(As, A), !.
 
@@ -159,7 +159,7 @@ body_determinism_assuming(F, N, Det) :-
 body_determinism_assuming_proof(F, N, Proof) :-
     analysis_cache_lookup(assume(F, N), Proof), !.
 body_determinism_assuming_proof(F, N, Proof) :-
-    catch(b_getval('$det_assume_stack', St), _, St = []),
+    ( nb_current('$det_assume_stack', St) -> true ; St = [] ),
     memberchk(F/N, St), !,
     analysis_make_proof(conditional_body(F/N), det, [],
                         [effect(F/N), decl(F/N), clause_set(F/N)], Proof).
@@ -169,7 +169,7 @@ body_determinism_assuming_proof(F, N, Proof) :-
     arrow_det_positions(ATs1, Positions),
     Positions \== [],
     maplist(assume_det_meta(ATs1, Positions), Metas, Upgraded),
-    catch(b_getval('$det_assume_stack', St), _, St = []),
+    ( nb_current('$det_assume_stack', St) -> true ; St = [] ),
     setup_call_cleanup(
         b_setval('$det_assume_stack', [F/N|St]),
         ( det_enforced_flag(F, N, Enf),
@@ -412,7 +412,7 @@ pattern_entailed_by_type(Pat, T) :-
 
 with_scoped_proper_list_var(none, Goal) :- !, call(Goal).
 with_scoped_proper_list_var(proper(V), Goal) :-
-    ( catch(b_getval('$proper_list_vars', Saved), _, fail) -> true
+    ( nb_current('$proper_list_vars', Saved) -> true
     ; Saved = [] ),
     setup_call_cleanup(
         b_setval('$proper_list_vars', [V|Saved]),
@@ -422,7 +422,7 @@ with_scoped_proper_list_var(proper(V), Goal) :-
 scoped_proper_list_var(V) :-
     get_attr(V, proper_list_cert, true), !.
 scoped_proper_list_var(V) :-
-    catch(b_getval('$proper_list_vars', Vars), _, fail),
+    nb_current('$proper_list_vars', Vars),
     member(Here, Vars), Here == V, !.
 
 %Bind each destructured field to its concrete non-arrow, non-wildcard field
@@ -519,7 +519,7 @@ parsed_value_decl(ParsedForms, C, T) :- member(parsed(expression, _, _, Form), P
                                         nonvar(Form), Form = [Colon, C, T], Colon == (:),
                                         atom(C), atom(T), \+ fun(C).
 
-stored_clause_head(F, N, Args) :- catch(nb_getval(F, Metas), _, fail),
+stored_clause_head(F, N, Args) :- atom(F), nb_current(F, Metas),
                                   member(Meta, Metas),
                                   Meta = fun_meta(Args, _, _),
                                   length(Args, N).
@@ -562,14 +562,14 @@ effect_det_exhaustiveness_required(ParsedForms, F, N) :-
             ( member(parsed(function, _, _, Form), ParsedForms),
               Form = [Eq, Head, Body], Eq == (=),
               Head = [F0|Args], F0 == F, length(Args, N)
-            ; catch(nb_getval(F, Stored), _, fail),
+            ; atom(F), nb_current(F, Stored),
               member(Meta, Stored),
               Meta = fun_meta(Args, Body, _),
               length(Args, N) ),
             Metas),
     Metas \== [],
     maplist(assume_det_meta(ATs, Positions), Metas, Upgraded),
-    catch(b_getval('$effect_assume_stack', St), _, St = []),
+    ( nb_current('$effect_assume_stack', St) -> true ; St = [] ),
     setup_call_cleanup(
         b_setval('$effect_assume_stack', [effect(F, N, Name)|St]),
         with_det_enforced(enforced(F, N),

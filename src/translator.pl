@@ -50,7 +50,7 @@ translate_clause(Input, Clause, ConstrainArgs, Dependencies) :-
         analysis_reemit_proof(Proof).
 
 with_compiling_caller(F, N, Goal) :-
-    ( catch(b_getval('$compiling_caller', Previous), _, fail) -> true ; Previous = none ),
+    ( nb_current('$compiling_caller', Previous) -> true ; Previous = none ),
     setup_call_cleanup(b_setval('$compiling_caller', F/N),
                        Goal,
                        b_setval('$compiling_caller', Previous)).
@@ -58,13 +58,13 @@ with_compiling_caller(F, N, Goal) :-
 %The clause whose body is being translated, for analyses that read the body's
 %determinism context (committed_call_site/2):
 with_compiling_clause(F, Params, Body, Goal) :-
-    catch(b_getval('$compiling_clause', Previous), _, Previous = none),
+    ( nb_current('$compiling_clause', Previous) -> true ; Previous = none ),
     setup_call_cleanup(b_setval('$compiling_clause', clause(F, Params, Body)),
                        Goal,
                        b_setval('$compiling_clause', Previous)).
 
 current_compiling_caller(F, N) :-
-    catch(b_getval('$compiling_caller', F/N), _, fail).
+    nb_current('$compiling_caller', F/N).
 translate_clause_core(Input, (Head :- BodyConj), ConstrainArgs) :-
                                                Input = [=, [F|Args0], BodyExpr],
                                                length(Args0, SourceArity),
@@ -80,7 +80,7 @@ translate_clause_core(Input, (Head :- BodyConj), ConstrainArgs) :-
                                                %support selection or coverage proofs:
                                                ( GoalsPrefix == [] -> HeadForm = clean
                                                ; HeadForm = head_goals ),
-                                               catch(nb_getval(F, Prev), _, Prev = []),
+                                               ( atom(F), nb_current(F, Prev) -> true ; Prev = [] ),
                                                nb_setval(F, [fun_meta(Args1, BodyExpr, HeadForm) | Prev]),
                                                clause_param_types(F, Args1, DeclOut),
                                                %Snapshot the declared arg positions that stay bare type variables after
@@ -178,7 +178,7 @@ clause_commit_cut(F, Args) :- \+ suppress_det_cut(true),
                               catch(( fn_determinism(F, N, D), committed_det(D) ), _, fail).
 
 function_has_conditional_commit(F, N) :-
-    catch(nb_getval(F, Metas), _, fail),
+    atom(F), nb_current(F, Metas),
     member(Meta, Metas),
     Meta = fun_meta(Args, Body, _),
     length(Args, N),
@@ -201,7 +201,7 @@ recompile_function_clauses(F) :-
         fail ) ).
 
 snapshot_recompile_state(F, recompile_state(Metas, Provisos, Inferred)) :-
-    ( catch(nb_getval(F, Metas0), _, fail) -> Metas = Metas0 ; Metas = '$absent' ),
+    ( atom(F), nb_current(F, Metas0) -> Metas = Metas0 ; Metas = '$absent' ),
     findall(proviso(N, Pos, Kind),
             det_bound_proviso(F, N, Pos, Kind),
             Provisos),
@@ -1546,7 +1546,7 @@ memberchk_eq(V, [H|_]) :- V == H, !.
 memberchk_eq(V, [_|T]) :- memberchk_eq(V, T).
 
 %Generate readable lambda name:
-next_lambda_name(Name) :- ( catch(nb_getval(lambda_counter, Prev), _, Prev = 0) ),
+next_lambda_name(Name) :- ( nb_current(lambda_counter, Prev) -> true ; Prev = 0 ),
                           N is Prev + 1,
                           nb_setval(lambda_counter, N),
                           format(atom(Name), 'lambda_~d', [N]).

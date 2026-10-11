@@ -401,7 +401,7 @@ origin_result_id([_|Origins], Source, Id) :-
     origin_result_id(Origins, Source, Id).
 
 with_origin_scope(Goal, Origins) :-
-    ( catch(b_getval('$relational_ir_origins', Saved), _, fail)
+    ( nb_current('$relational_ir_origins', Saved)
       -> HadSaved = yes
     ; Saved = [], HadSaved = no ),
     setup_call_cleanup(
@@ -414,7 +414,7 @@ with_origin_scope(Goal, Origins) :-
         ; b_setval('$relational_ir_origins', inactive) )).
 
 record_origin(Source, Id) :-
-    catch(b_getval('$relational_ir_origins', Origins), _, Origins = inactive),
+    ( nb_current('$relational_ir_origins', Origins) -> true ; Origins = inactive ),
     ( is_list(Origins)
       -> b_setval('$relational_ir_origins', [origin(Id, Source)|Origins])
     ; true ).
