@@ -40,7 +40,10 @@ be written is reported as a warning.
 
 :- dynamic clause_position/3.
 
-snapshot_format(1).
+snapshot_format(2).
+
+% A changed predicate is stored as chunks of this many clauses.
+chunk_clauses(1000).
 
 load_metta_file_cached(File, Results) :- load_metta_file_cached(File, Results, '&self').
 
@@ -309,18 +312,34 @@ runtime_fingerprint(Root, Fingerprint) :-
     maplist(file_digest, Files, Digests),
     variant_sha1(Digests, Fingerprint).
 
-% The changed predicates are separate terms, so a replay holds one of them
-% in memory at a time.
+% A changed predicate is stored as changed(P, Props, From, Refers,
+% Referenced, N) followed by its clauses in N separate chunks, so a replay
+% holds one chunk in memory at a time however large the predicate is.
 write_snapshot(File, Header, Inputs, effect(Prelude, Changed, Ending)) :-
     file_directory_name(File, Dir),
     make_directory_path(Dir),
     current_prolog_flag(pid, Pid),
     format(atom(Tmp), '~w.~w.tmp', [File, Pid]),
     setup_call_cleanup(open(Tmp, write, Out, [type(binary)]),
-                       ( maplist(fast_write(Out), [Header, Inputs, Prelude|Changed]),
+                       ( maplist(fast_write(Out), [Header, Inputs, Prelude]),
+                         maplist(write_change(Out), Changed),
                          fast_write(Out, Ending) ),
                        close(Out)),
     rename_file(Tmp, File).
+
+write_change(Out, changed(P, Key, From, Refers, Referenced, Clauses)) :-
+    chunk_clauses(Size),
+    chunks(Clauses, Size, Chunks),
+    length(Chunks, N),
+    fast_write(Out, changed(P, Key, From, Refers, Referenced, N)),
+    maplist(fast_write(Out), Chunks).
+
+chunks(List, Size, [Chunk|Chunks]) :-
+    length(Chunk, Size),
+    append(Chunk, Rest, List), !,
+    chunks(Rest, Size, Chunks).
+chunks([], _, []) :- !.
+chunks(List, _, [List]).
 
 replay_snapshot(File, Header, Results) :-
     exists_file(File),
@@ -353,7 +372,7 @@ apply_prelude(prelude(Keys, Sources, Flags), Keys, Table) :-
 
 apply_rest(Change, In, Keys, Table, Results) :-
     Change = changed(_, _, _, _, _, _), !,
-    apply_change(Keys, Table, Change),
+    apply_change(In, Keys, Table, Change),
     fast_read(In, Next),
     apply_rest(Next, In, Keys, Table, Results).
 apply_rest(ending(Vars, Deleted, PResults), _, Keys, Table, Results) :-
@@ -362,7 +381,9 @@ apply_rest(ending(Vars, Deleted, PResults), _, Keys, Table, Results) :-
     forall(member(K, Deleted), nb_delete(K)),
     restored(Keys, Table, PResults, Results).
 
-apply_change(Keys, Table, changed(P, (M:F/A)-Props, From, Refers, Referenced, Clauses)) :-
+% Each chunk is read and asserted in a failure-driven loop, which frees it
+% before the next is read.
+apply_change(In, Keys, Table, changed(P, (M:F/A)-Props, From, Refers, Referenced, N)) :-
     functor(H, F, A),
     (   predicate_property(M:H, dynamic)
     ->  true
@@ -370,7 +391,9 @@ apply_change(Keys, Table, changed(P, (M:F/A)-Props, From, Refers, Referenced, Cl
         forall(member(Prop, Props), declare(Prop, M:F/A))
     ),
     forall(( nth_clause(M:H, I, R), I > From ), erase(R)),
-    maplist(assert_stored(Refers, Keys, Table, M), Clauses),
+    forall(between(1, N, _),
+           ( fast_read(In, Clauses),
+             maplist(assert_stored(Refers, Keys, Table, M), Clauses) )),
     (   Referenced == referenced
     ->  findall(R, clause(M:H, _, R), RefList),
         Refs =.. [refs|RefList],
