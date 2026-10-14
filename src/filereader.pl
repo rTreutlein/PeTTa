@@ -53,7 +53,7 @@ rethrow_metta_file_error(Filename, error(Type, Context)) :- ( var(Context) ; ato
                                                            throw(error(Type, context(Filename, 'while loading MeTTa file'))).
 rethrow_metta_file_error(_, Error) :- throw(Error).
 
-current_metta_file(File) :- catch(nb_getval('$metta_file', File), _, File = '<string>').
+current_metta_file(File) :- ( nb_current('$metta_file', File) -> true ; File = '<string>' ).
 
 %Run Goal as though it were being compiled from File. Dependency revalidation
 %uses this interface without owning the filereader's thread-local state.

@@ -355,12 +355,12 @@ covers_all_nonempty_lists(P) :- nonvar(P), P = [H|Tl], var(H), var(Tl).
 
 %Variables proven nonempty on the current analysis path, scoped by b_setval
 %and compared by identity (they are the shared body variables).
-with_nonempty_var(V, Goal) :- catch(b_getval('$nonempty_vars', Saved), _, Saved = []),
+with_nonempty_var(V, Goal) :- ( nb_current('$nonempty_vars', Saved) -> true ; Saved = [] ),
                               setup_call_cleanup(b_setval('$nonempty_vars', [V|Saved]),
                                                  Goal,
                                                  b_setval('$nonempty_vars', Saved)).
 
-nonempty_var(V) :- catch(b_getval('$nonempty_vars', Vs), _, fail), member(X, Vs), X == V, !.
+nonempty_var(V) :- nb_current('$nonempty_vars', Vs), member(X, Vs), X == V, !.
 
 %(== V ()) or (== () V) with V a variable whose known type is a (List _). The
 %empty literal () is the empty Prolog list here; == is the structural test the
@@ -562,7 +562,7 @@ output_cert_core(Kind, F, N, Stack, Verdict, Dependencies) :-
 :- dynamic pending_clause_body/4.   % pending_clause_body(File, F, N, Body)
 
 cert_clause_bodies(F, N, Bodies) :-
-    findall(B, ( catch(nb_getval(F, Ms), _, fail),
+    findall(B, ( atom(F), nb_current(F, Ms),
                  member(Meta, Ms),
                  Meta = fun_meta(As, B, _),
                  length(As, N) ), Rs),
@@ -704,19 +704,19 @@ body_determinism(F, N, Det) :-
 body_determinism_proof(F, N, Proof) :-
     analysis_cache_lookup(det(F, N), Proof), !.
 body_determinism_proof(F, N, Proof) :-
-    catch(b_getval('$det_stack', St), _, St = []),
+    ( nb_current('$det_stack', St) -> true ; St = [] ),
     memberchk(F/N, St), !,
     analysis_make_proof(body(F/N), det, [],
                         [effect(F/N), clause_set(F/N)], Proof).
 body_determinism_proof(F, N, Proof) :-
-    catch(nb_getval(F, Metas0), _, Metas0 = []),
+    ( atom(F), nb_current(F, Metas0) -> true ; Metas0 = [] ),
     include(arity_meta(N), Metas0, Metas),
     ( Metas == []
       -> ( builtin_flat_cardinality(F, N, Det0)
            -> Det = Det0 ; Det = unspecified ),
          analysis_make_proof(body(F/N), Det, [],
                              [effect(F/N), decl(F/N)], Proof)
-    ; catch(b_getval('$det_stack', St), _, St = []),
+    ; ( nb_current('$det_stack', St) -> true ; St = [] ),
       setup_call_cleanup(
           b_setval('$det_stack', [F/N|St]),
           with_compiling_caller(F, N,
@@ -744,7 +744,7 @@ bind_meta_param(Arg, T) :- ignore(catch(bind_pattern_typed(Arg, T), _, true)).
 arity_meta(N, Meta) :- Meta = fun_meta(Args, _, _), length(Args, N).
 
 %The stored clause metadata of F/N; fails when it has no clauses:
-fun_metas(F, N, Metas) :- catch(nb_getval(F, Metas0), _, fail),
+fun_metas(F, N, Metas) :- atom(F), nb_current(F, Metas0),
                           include(arity_meta(N), Metas0, Metas),
                           Metas \== [].
 

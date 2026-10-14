@@ -56,7 +56,7 @@ validate_function_determinism(F, Args, BodyExpr, PrevClauses, HeadForm) :-
 %direct parameter by position. DirectParams excludes is-var-exempt parameters
 %(det_enforced_params/3). The commitment gate $det_enforced has the coarser
 %clause-set lifetime and is kept separate.
-with_det_head_vars(Args, Body, Goal) :- catch(b_getval('$det_head_scope', Saved), _, Saved = scope([], [], [])),
+with_det_head_vars(Args, Body, Goal) :- ( nb_current('$det_head_scope', Saved) -> true ; Saved = scope([], [], []) ),
                                   term_variables(Args, HVs),
                                   det_enforced_params(Args, Body, DPs),
                                   setup_call_cleanup(b_setval('$det_head_scope', scope(HVs, DPs, Args)),
@@ -78,26 +78,26 @@ body_applies_is_var(E, V) :- nonvar(E), E = [X|Xs],
                              ( body_applies_is_var(X, V) -> true
                              ; body_applies_is_var(Xs, V) ).
 
-det_head_var(H) :- catch(b_getval('$det_head_scope', scope(HVs, _, _)), _, fail),
+det_head_var(H) :- nb_current('$det_head_scope', scope(HVs, _, _)),
                    member(V, HVs), V == H, !.
 
 %A direct parameter: a top-level head argument that is itself a variable, not
 %a field of a destructured parameter like (P $u). Only direct parameters get
 %the boundness check, so the strengthenings key on this, not det_head_var/1.
-det_direct_param(H) :- catch(b_getval('$det_head_scope', scope(_, DPs, _)), _, fail),
+det_direct_param(H) :- nb_current('$det_head_scope', scope(_, DPs, _)),
                        member(V, DPs), V == H, !.
 
 %The commitment gate: enforced(F, N) while the body of a function with an
 %explicit -[det]->/-[semidet]-> arrow is analysed, so its direct parameters are
 %bound at runtime and consumptions are recorded against F/N; false otherwise.
-with_det_enforced(Bool, Goal) :- catch(b_getval('$det_enforced', Saved), _, Saved = false),
+with_det_enforced(Bool, Goal) :- ( nb_current('$det_enforced', Saved) -> true ; Saved = false ),
                                  setup_call_cleanup(b_setval('$det_enforced', Bool),
                                                     Goal,
                                                     b_setval('$det_enforced', Saved)).
 
 %The (F, N) of the committed function currently under body analysis, or fail if
 %the gate is not raised (value false):
-det_enforced_fn(F, N) :- catch(b_getval('$det_enforced', E), _, fail), E = enforced(F, N).
+det_enforced_fn(F, N) :- nb_current('$det_enforced', E), E = enforced(F, N).
 
 %A direct parameter under an active committed arrow is bound at runtime, which
 %an ordinary typed argument is not. Succeeding consumes its boundness; the
@@ -161,7 +161,7 @@ committed_call_site(Fun, Args, Values, Test) :-
            analysis_emit(dependency(effect(Closure)))).
 
 committed_instance(Fun, N, Args) :-
-    ( catch(b_getval('$compiling_clause', clause(F, Params, Body)), _, fail)
+    ( nb_current('$compiling_clause', clause(F, Params, Body))
       -> length(Params, Arity), det_enforced_flag(F, Arity, Enf)
     ; Params = [], Body = [], Enf = false ),
     analysis_collect(with_det_enforced(Enf,
