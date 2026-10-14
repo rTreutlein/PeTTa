@@ -1377,7 +1377,7 @@ cmp_native('!=', A, B, (A \== B)).
 %source expressions where the caller has them, otherwise the values AVs.
 build_call_or_partial(Fun, Src, AVs, Out, Inner, Extra, Goals) :- ( maybe_specialize_call(Fun, AVs, Out, Goal)
                                                                     -> commit_call(Fun, Src, AVs, Out, Goal, Goal1),
-                                                                       append(Inner, [catch(call(Goal1), _, fail)|Extra], Goals)
+                                                                       append(Inner, [Goal1|Extra], Goals)
                                                                      ; build_direct_call(Fun, Src, AVs, Out, Inner, Extra, Goals) ).
 
 build_direct_call(Fun, Src, AVs, Out, Inner, Extra, Goals) :- length(AVs, N),
