@@ -12,14 +12,14 @@ SCRIPT = textwrap.dedent(
     from python.petta import PeTTa
     petta = PeTTa(petta_path=sys.argv[1])
     print("results", petta.load_metta_file_cached(sys.argv[2]))
-    print("value", petta.process_metta_string("!(double 21)"))
+    print("value", petta.process_metta_string(sys.argv[3]))
     """
 )
 
 
-def load_in_fresh_process(repo_root, library, cache):
+def load_in_fresh_process(repo_root, library, cache, query="!(double 21)"):
     completed = subprocess.run(
-        [sys.executable, "-c", SCRIPT, str(repo_root), str(library)],
+        [sys.executable, "-c", SCRIPT, str(repo_root), str(library), query],
         env={**os.environ, "PETTA_LOAD_CACHE": str(cache)},
         capture_output=True,
         text=True,
@@ -68,3 +68,17 @@ def test_new_source_beside_an_import_reloads(repo_root, tmp_path):
     reloaded = load_in_fresh_process(repo_root, library, cache)
 
     assert reloaded[0] == "loading"
+
+
+def test_predicate_larger_than_a_chunk_replays(repo_root, tmp_path):
+    # 2500 clauses span several snapshot chunks and end in a partial one.
+    library = tmp_path / "large.metta"
+    library.write_text("".join(f"(= (f {i}) {i})\n" for i in range(2500)))
+    cache = tmp_path / "cache"
+    query = "!(f 0) !(f 999) !(f 1000) !(f 2499)"
+
+    cold = load_in_fresh_process(repo_root, library, cache, query)
+    warm = load_in_fresh_process(repo_root, library, cache, query)
+
+    assert cold == warm == ["results []", "value ['0', '999', '1000', '2499']"]
+    assert len(list(cache.iterdir())) == 1
