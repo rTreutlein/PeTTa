@@ -136,6 +136,25 @@ assert_status inference 0
 assert_contains inference "is A+1"
 assert_contains inference "apply_fn1"
 
+# Unknown destructured fields need residual guards; plain inferred parameters,
+# declared list fields and constructor fields still compile without them.
+run_capture destructured_unknown sh "$ROOT_DIR/run.sh" "$ROOT_DIR/examples/type_destructured_arg_guard.metta" --warn-runtime-checks
+assert_status destructured_unknown 0
+assert_contains destructured_unknown "h([A], B) :-"
+assert_contains destructured_unknown "typecheck_or_error(A, 'A')"
+assert_contains destructured_unknown "Warning: runtime type check in only-a against 'A'"
+assert_not_contains destructured_unknown "❌"
+if [ "$(grep -c "Warning: runtime type check in only-a" "$TMP_DIR/destructured_unknown.out")" -ne 2 ]; then
+    echo "[FAIL] expected one guard for h and one for nested"
+    exit 1
+fi
+
+run_capture destructured_known sh "$ROOT_DIR/run.sh" "$ROOT_DIR/examples/type_destructured_known.metta" --warn-runtime-checks
+assert_status destructured_known 0
+assert_not_contains destructured_known "Warning: runtime type check"
+assert_not_contains destructured_known "typecheck_or_error"
+assert_not_contains destructured_known "❌"
+
 printf '%s\n' "[PASS] single monomorphic resolved"
 printf '%s\n' "[PASS] single polymorphic resolved"
 printf '%s\n' "[PASS] single polymorphic compile-time mismatch"
@@ -148,3 +167,4 @@ printf '%s\n' "[PASS] strict mode runtime-guard rejection"
 printf '%s\n' "[PASS] strict mode missing-type rejection"
 printf '%s\n' "[PASS] inferred fib compiles guard-free to native arithmetic"
 printf '%s\n' "[PASS] inference: knowledge-only, taint, closure fast path"
+printf '%s\n' "[PASS] destructured fields: residual checks only without static evidence"

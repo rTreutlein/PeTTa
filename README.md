@@ -82,17 +82,16 @@ guard, because inference already elided the checks inside the callee
 unaffected — they are checked, and rejected, exactly as before
 (`examples/fail_declared_sentinel_param.metta`).
 
-A variable bound by a *destructuring* head pattern is a parameter too, and is
-inferred the same way: `(= (tvf (stv $s $c)) (* $s $c))` infers `(-> (stv
-Number Number) Number)` and multiplies without guarding, where before only a
-plain `$s`/`$c` parameter did. The pattern's own type is rebuilt from its
-fields' — that shape is what keeps `(tvf (stv "a" "b"))` an error rather than a
-silently wrong number — and is kept only when it reads back as the shape it was
-built from, so a pattern headed by a declared *type name* (which reads
-positionally, see **Tuple types** below) simply infers nothing. A pattern
-headed by a uniquely declared constructor takes its field types straight from
-that declaration, whether it appears in a head, a `let`/`let*` binder or a
-`case` branch, and needs no type for the scrutinee to do it. See
+A variable bound by a *destructuring* head pattern has an unknown type unless
+the head's declared type or a constructor declaration constrains it. For
+example, `(= (h ($x)) (only-a $x))` retains a runtime check against `only-a`'s
+declared argument type. Body use alone cannot discharge that check: the
+enclosing pattern's inferred type may be discarded, leaving no check at the
+caller either. To compile `(= (tvf (stv $s $c)) (* $s $c))` without guards,
+declare `(: tvf (-> (stv Number Number) Number))`. A pattern headed by a
+uniquely declared constructor takes its field types straight from that
+declaration, whether it appears in a head, a `let`/`let*` binder or a `case`
+branch, and needs no type for the scrutinee to do it. See
 `examples/strict_destructured_param.metta`,
 `examples/destructured_param_shapes.metta` and
 `examples/fail_destructured_param_mismatch.metta`.

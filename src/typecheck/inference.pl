@@ -48,10 +48,10 @@ strict_check_function_typed(F, Args) :- ( strict_mode(true), \+ sub_atom(F, 0, _
                                            ; true ).
 
 %%% Local type inference for undeclared functions. While a clause is
-%%% translated, its parameters (including destructured pattern variables)
-%%% carry fresh assumption type variables that typed call sites bind; a
-%%% parameter seeing conflicting uses is tainted. The harvested types are an
-%%% internal store used only to add knowledge: eliminating guards, typing call
+%%% translated, its direct parameters carry fresh assumption type variables
+%%% that typed call sites bind; a parameter seeing conflicting uses is tainted.
+%%% The harvested types are an internal store used only to add knowledge:
+%%% eliminating guards, typing call
 %%% outputs, satisfying strict mode. Call sites of inferred functions demand an
 %%% inferred type only where a value is visibly of another (check_call_arg/5).
 :- dynamic inferred_fn_type/3.     % inferred_fn_type(F, ArgTypes, OutType)
@@ -77,17 +77,13 @@ assume_param_type(Arg, t(Ps, Ts), t(Ps1, [T|Ts])) :- ( var(Arg)
                                                           ; add_known_type(Arg, T), Ps1 = [a(Arg, T)|Ps] )
                                                      ; value_single_type(Arg, T)
                                                        -> ctor_pattern_field_types(Arg), Ps1 = Ps
-                                                     %a destructured variable is a parameter too
-                                                     %(its pattern type is rebuilt in infer_param_type/4):
-                                                     ; is_list(Arg) -> assume_pattern_vars(Arg, Ps, Ps1)
+                                                     %A field of an untyped head pattern is not a
+                                                     %direct parameter: its requirement may not survive
+                                                     %rebuilding/normalizing the enclosing pattern type.
+                                                     %Leave it unknown so declared calls emit residual
+                                                     %guards. Declared head/constructor field types still
+                                                     %supply real knowledge and discharge those guards.
                                                      ; Ps1 = Ps ).
-
-assume_pattern_vars([], Ps, Ps).
-assume_pattern_vars([A|As], Ps0, Ps) :- ( var(A) -> ( known_singleton(A, _) -> Ps1 = Ps0
-                                                    ; add_known_type(A, Tv), Ps1 = [a(A, Tv)|Ps0] )
-                                        ; is_list(A) -> assume_pattern_vars(A, Ps0, Ps1)
-                                        ; Ps1 = Ps0 ),
-                                        assume_pattern_vars(As, Ps1, Ps).
 
 %A pattern headed by a uniquely declared constructor (\+ fun(Tag), as in
 %member_ctor/3) types its fields from that declaration: (: P (-> Number Number
@@ -143,8 +139,9 @@ pattern_type_roundtrip(Arg, T, TN) :- ( \+ is_list(Arg) -> TN = T
                                       ; TN = '%Undefined%' ).
 
 %A destructuring parameter's type is its pattern with each field replaced by
-%its inferred type: (stv $s $c) used as numbers is (stv Number Number). The
-%fields' body guards were elided, so call sites need this shape to check.
+%its known type: (stv $s $c) with Number fields is (stv Number Number).
+%Only independently known field types contribute; unknown fields keep their
+%body guards and normalize to no inferred requirement.
 infer_param_type(Pairs, Taints, Arg, T) :- ( var(Arg) -> ( memberchk_eq(Arg, Taints) -> T = '%Undefined%'
                                                          ; member(a(P, Tv), Pairs), P == Arg -> T = Tv
                                                          ; known_singleton(Arg, K) -> T = K
