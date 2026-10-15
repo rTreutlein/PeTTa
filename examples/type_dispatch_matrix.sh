@@ -144,8 +144,8 @@ assert_contains destructured_unknown "h([A], B) :-"
 assert_contains destructured_unknown "typecheck_or_error(A, 'A')"
 assert_contains destructured_unknown "Warning: runtime type check in only-a against 'A'"
 assert_not_contains destructured_unknown "❌"
-if [ "$(grep -c "Warning: runtime type check in only-a" "$TMP_DIR/destructured_unknown.out")" -ne 2 ]; then
-    echo "[FAIL] expected one guard for h and one for nested"
+if [ "$(grep -c "Warning: runtime type check in only-a" "$TMP_DIR/destructured_unknown.out")" -ne 3 ]; then
+    echo "[FAIL] expected guards for h, nested and the consuming branch of maybe-h"
     exit 1
 fi
 
@@ -154,6 +154,24 @@ assert_status destructured_known 0
 assert_not_contains destructured_known "Warning: runtime type check"
 assert_not_contains destructured_known "typecheck_or_error"
 assert_not_contains destructured_known "❌"
+
+run_capture destructured_partial sh "$ROOT_DIR/run.sh" "$ROOT_DIR/examples/type_destructured_partial.metta" --warn-runtime-checks
+assert_status destructured_partial 0
+assert_not_contains destructured_partial "Warning: runtime type check"
+assert_not_contains destructured_partial "typecheck_or_error"
+assert_not_contains destructured_partial "❌"
+
+run_capture destructured_call sh "$ROOT_DIR/run.sh" "$ROOT_DIR/examples/type_destructured_call_guard.metta" --warn-runtime-checks
+assert_status destructured_call 0
+assert_contains destructured_call "typecheck_or_error([stv, x, 3],"
+assert_contains destructured_call "C is A*B"
+assert_not_contains destructured_call "❌"
+assert_not_contains destructured_call "type_error evaluable"
+
+run_capture destructured_strict sh "$ROOT_DIR/run.sh" "$ROOT_DIR/examples/strict_destructured_param.metta" --strict --warn-runtime-checks
+assert_status destructured_strict 0
+assert_not_contains destructured_strict "Warning: runtime type check"
+assert_not_contains destructured_strict "typecheck_or_error"
 
 printf '%s\n' "[PASS] single monomorphic resolved"
 printf '%s\n' "[PASS] single polymorphic resolved"
@@ -168,3 +186,4 @@ printf '%s\n' "[PASS] strict mode missing-type rejection"
 printf '%s\n' "[PASS] inferred fib compiles guard-free to native arithmetic"
 printf '%s\n' "[PASS] inference: knowledge-only, taint, closure fast path"
 printf '%s\n' "[PASS] destructured fields: residual checks only without static evidence"
+printf '%s\n' "[PASS] complete and partial tagged shapes: caller checks, guard-free callees"

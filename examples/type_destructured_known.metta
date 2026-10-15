@@ -15,3 +15,9 @@
 (: Box (-> A Boxed))
 (= (boxed (Box $x)) (only-a $x))
 !(test (boxed (Box a)) (ok a))
+
+; A complete constructed output is also statically known at the next call.
+(= (make-stv) (stv 2 3))
+(= (tvf2 (stv $s $c)) (* $s $c))
+!(test (tvf2 (make-stv)) 6)
+!(test (tvf2 (reduce (make-stv))) 6)

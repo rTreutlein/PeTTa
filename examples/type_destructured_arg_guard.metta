@@ -18,3 +18,17 @@
 (= (g $x) (only-a $x))
 !(test (g a) (ok a))
 !(test (repr (catch (g (car-atom (b))))) "(Error (literal_type_mismatch b A) typecheck)")
+
+; A lost shape's guard stays in the branch that consumes the field. Moving it
+; to clause entry would incorrectly reject the sentinel branch below.
+(= (maybe-h ($x)) (if (== $x b) skipped (only-a $x)))
+!(test (maybe-h (b)) skipped)
+!(test (maybe-h (a)) (ok a))
+
+; A required list element is still checked when its head shape is lost.
+(: list-a (-> (List A) %Undefined%))
+(= (list-a $xs) (ok-list $xs))
+(= (list-h ($x)) (list-a ($x)))
+!(test (list-h (a)) (ok-list (a)))
+!(test (repr (catch (list-h (x))))
+       "(Error (literal_type_mismatch (x) (List A)) typecheck)")
