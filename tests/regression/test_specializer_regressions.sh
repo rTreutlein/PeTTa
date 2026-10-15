@@ -27,8 +27,18 @@ log=$(run_ok repro2 tests/regression/repro2_exponential_failed_specialization.me
 count=$(grep -c 'Not specialized' "$log" || true)
 [ "$count" -eq 11 ] || { echo "repro2 expected 11 failed-specialization attempts, got $count"; cat "$log"; exit 1; }
 
-# repro3 is now examples/fail_failed_specialization_self_leak.metta: the
-# checker rejects its Number/myfun mismatch, tested by test.sh as expected-fail.
+# Failed specializations must remove temporary type atoms from &self while
+# preserving the user's function-typed wrap declaration. Require an actual
+# failed attempt so a type error or a skipped specialization cannot pass.
+log=$(run_ok repro3 tests/regression/repro3_failed_specialization_self_leak.metta)
+count=$(grep -Fc 'Not specialized wrap_Spec_[myfun]/3' "$log" || true)
+[ "$count" -eq 1 ] || { echo "repro3 expected 1 failed wrap specialization, got $count"; cat "$log"; exit 1; }
+if grep -Fq '(wrap_Spec_' "$log"; then
+    echo "repro3 leaked wrap_Spec_ into &self output"
+    cat "$log"
+    exit 1
+fi
+grep -Fq 'partial wrap ((-> (-> Number Number) Number Number))' "$log" || { echo "repro3 missing parent wrap type output"; cat "$log"; exit 1; }
 
 # Variant-normalized names should not embed fresh Prolog variable ids inside
 # compound partial/2 keys.  This repro still has an unbound arithmetic variable
