@@ -360,12 +360,27 @@ type_guard(Fun, AV, T, Gs) :- ( nonvar(T), \+ wildcard_type(T)
 undecidable_arrow_commitment(T) :- is_arrow_type(T), T = [H|_], arrow_atom_det(H, L),
                                    committed_det(L).
 
-%Inline the primitive fast path into the compiled goal so hot code only pays a
-%native type test; the reflective check runs only when that test fails:
-guard_goal(AV, 'Number', ( number(AV) -> true ; typecheck_or_error(AV, 'Number') )) :- !.
-guard_goal(AV, 'String', ( string(AV) -> true ; typecheck_or_error(AV, 'String') )) :- !.
-guard_goal(AV, 'Bool', ( ( AV == true ; AV == false ) -> true ; typecheck_or_error(AV, 'Bool') )) :- !.
+%Inline primitive tests, including primitive-only tagged shapes, into hot code.
+%Reflection and the existing error/variable-constraint semantics remain in the
+%fallback. Build these goals at compile time, never inspect declarations per call.
+guard_goal(AV, T, ( Test -> true ; typecheck_or_error(AV, T) )) :-
+    primitive_guard_test(AV, T, Test), !.
 guard_goal(AV, T, typecheck_or_error(AV, T)).
+
+primitive_guard_test(V, T, number(V)) :- T == 'Number', !.
+primitive_guard_test(V, T, string(V)) :- T == 'String', !.
+primitive_guard_test(V, T, ( V == true ; V == false )) :- T == 'Bool', !.
+primitive_guard_test(V, T, ( nonvar(V), V = [ActualTag|Fields], ActualTag == Tag, Tests )) :-
+    tagged_tuple_type(T, Tag, Types),
+    primitive_field_tests(Fields, Types, Tests).
+
+%Inspect each cons before matching it, and test the terminal tail with ==.
+%Together with non-binding tag/leaf tests this never instantiates an input,
+%including attributed variables or open tails, before falling back.
+primitive_field_tests(Tail, [], Tail == []).
+primitive_field_tests(Fields, [T|Ts], ( nonvar(Fields), Fields = [V|Vs], Test, Rest )) :-
+    primitive_guard_test(V, T, Test),
+    primitive_field_tests(Vs, Ts, Rest).
 
 apply_call_args(Mode, Fun, AVs, ATs, Gs) :-
     open_nominal_intersection_obligations(AVs, ATs, Obligations),
