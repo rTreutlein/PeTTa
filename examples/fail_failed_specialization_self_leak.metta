@@ -1,3 +1,6 @@
+; Original repro3 (#237): failed specialization must not leak type atoms into &self.
+; The declared Number parameter now rejects myfun before the &self inspection.
+; Keep this as an expected type failure in test.sh.
 (= (myfun $x) $x)
 (: wrap (-> Number Number Number))
 (= (wrap $f $x) (wrap2 $f $x))
