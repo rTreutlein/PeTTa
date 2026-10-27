@@ -125,9 +125,10 @@ test(inlined_arithmetic_error_is_preserved,
      [throws(error(evaluation_error(zero_divisor),_))]) :-
     'throwing-pair-total'(0,_).
 
-test(bare_parameter_tuple_is_not_inlined) :-
-    clause('tuple-total'(_,_),Body),
-    sub_term(G,Body),nonvar(G),functor(G,'tuple-values',2),!.
+test(bare_parameter_tuple_keeps_its_value) :-
+    'tuple-total'(2,5),
+    'tuple-values'(2,Pair),Pair==[2,3],
+    nb_setarg(1,Pair,changed),'tuple-values'(2,Fresh),Fresh==[2,3].
 
 test(unbound_fields_retain_their_cells) :-
     Goal=(reduce([X,Y],Pair),Pair=[D,E],var(D),

@@ -1435,12 +1435,16 @@ overload_branch_guard(Fun, AV, T, G) :- ( arg_statically_ok(AV, T) -> G = []
 
 %Type-resolved builtin arithmetic compiles to native is/2, constant-folded when
 %both operands are literals. Only while the builtin definition is untouched:
-arith_inline(Fun, [A, B], Out, Gs) :- builtin_codegen_hook(Fun, 2, arithmetic_native),
-                                      arith_op(Fun, A, B, Expr),
-                                      builtin_untouched(Fun),
-                                      ( number(A), number(B)
+arith_inline(Fun, Args, Out, Gs) :- length(Args,N),
+                                      builtin_codegen_hook(Fun,N,arithmetic_native),
+                                      arith_op(Fun,Args,Expr),
+                                      builtin_untouched(Fun,N),
+                                      append(Args,[Out],Actual),Direct=..[Fun|Actual],
+                                      resolve_memoization(Fun,Args,Out,Goal),Goal==Direct,
+                                      ( maplist(number,Args)
                                         -> catch((Out is Expr, Gs = []), _, Gs = [Out is Expr])
-                                         ; Gs = [Out is Expr] ).
+                                         ; Gs = [Out is Expr] ),
+                                      analysis_emit(dependency(clause_set(Fun/N))).
 
 % Fuse only the trailing, single-use arithmetic temporaries produced while
 % translating this call's arguments. A source variable or an earlier reference
@@ -1464,15 +1468,19 @@ fuse_arithmetic_tail([Goal|Earlier], Source, Expr, Kept, Fused) :-
     fuse_arithmetic_tail(Earlier, Source, Combined, Kept, Fused).
 fuse_arithmetic_tail(Kept, _, Expr, Kept, Expr).
 
-arith_op('+', A, B, A + B).
-arith_op('-', A, B, A - B).
-arith_op('*', A, B, A * B).
-arith_op('/', A, B, A / B).
-arith_op('%', A, B, A mod B).
-arith_op(min, A, B, min(A, B)).
-arith_op(max, A, B, max(A, B)).
+arith_op('+', [A,B], A+B).
+arith_op('-', [A,B], A-B).
+arith_op('*', [A,B], A*B).
+arith_op('/', [A,B], A/B).
+arith_op('%', [A,B], A mod B).
+arith_op(min, [A,B], min(A,B)).
+arith_op(max, [A,B], max(A,B)).
+arith_op(exp, [A], exp(A)).
+arith_op('sqrt-math', [A], sqrt(A)).
+arith_op('abs-math', [A], abs(A)).
+arith_op('pow-math', [A,B], A**B).
 
-builtin_untouched(F) :- functor(H, F, 3), predicate_property(H, number_of_clauses(1)).
+builtin_untouched(F,N) :- A is N+1,functor(H,F,A),predicate_property(H,number_of_clauses(1)).
 
 %Reified comparisons whose result only feeds an if-condition compile to the
 %native comparison, skipping the true/false round-trip:
@@ -1484,7 +1492,7 @@ translate_if_cond(Cond, PreConj, CondGoal) :- translate_expr(Cond, GsC, Cv),
 reified_cond(G, Cv, Native) :- nonvar(G), G =.. [F, A, B, R], R == Cv,
                                builtin_codegen_hook(F, 2, reified_comparison),
                                cmp_native(F, A, B, Native),
-                               builtin_untouched(F).
+                               builtin_untouched(F,2).
 
 cmp_native('<', A, B, (A < B)).
 cmp_native('<=', A, B, (A =< B)).
@@ -1508,7 +1516,7 @@ build_direct_call(Fun, Src, AVs, Out, Inner, Extra, Goals) :- length(AVs, N),
                                                                 -> resolve_memoization(Fun, AVs, Out, Goal0),
                                                                    ( numeric_inline(Fun, AVs, Out, Goal0, Inline)
                                                                      -> append([Inner, Inline, Extra], Goals)
-                                                                     ; pattern_inline(Fun, AVs, Out, Goal0, Inlined)
+                                                                     ; compiled_inline(Fun, AVs, Out, Goal0, Inlined)
                                                                        -> commit_call(Fun, Src, AVs, Out, Inlined, Goal),
                                                                           append(Inner, [Goal|Extra], Goals)
                                                                      ; commit_call(Fun, Src, AVs, Out, Goal0, Goal),
@@ -1518,44 +1526,41 @@ build_direct_call(Fun, Src, AVs, Out, Inner, Extra, Goals) :- length(AVs, N),
                                                                    append(Inner, Extra, Goals)
                                                                  ; append(Inner, [throw_function_overapplication(Fun, N)|Extra], Goals) ).
 
-% Reuse validated pattern code, including its guards, alias timing and primitive
-% dispatch. Only native goals are eligible: no nested user calls or exposed cuts.
-% Dependency invalidation marks old bodies before any consumer is rebuilt.
-pattern_inline(F, Args, Out, Goal, (Out=Value,Body)) :-
+% Inline small typed clauses without reinterpreting their source. The head is
+% matched at the call, before the copied body; its primitive calls stay calls.
+% A 64-node goal budget bounds transitive code growth. Cuts and meta calls
+% retain their predicate boundary, and invalidation excludes stale bodies.
+compiled_inline(F, Args, Out, Goal, Inline) :-
     oracle_mode(false), oracle_det_mode(false),
     \+ current_compiling_caller(F, _),
-    append(Args,[Out],CallArgs), Direct=..[F|CallArgs], Goal==Direct,
+    append(Args,[Out],Actual), Direct=..[F|Actual], Goal==Direct,
     length(Args,N),
     findall(ATs-OT-Det,
             (declared_fn_type(F,ATs,OT,Det),length(ATs,N)),
-            [_-'Number'-Effect]),
+            [_-Result-Effect]),
     memberchk(Effect,[det,semidet]),
+    ( Result == 'Number' -> true
+    ; is_list(Result),Result=[_,_|_],maplist(==('Number'),Result) ),
     Arity is N+1, functor(Target,F,Arity),
     predicate_property(Target,number_of_clauses(1)),
     clause(Target,RawBody,Ref), \+ compiled_body_stale(Ref),
-    translated_from(Ref,[=,[F|SourceParams],Source]),
-    same_length(SourceParams,Args),maplist(var,SourceParams),
-    term_variables(SourceParams,Unique),same_length(SourceParams,Unique),
-    nonvar(Source),Source=[Case,Key,Pairs],Case==case,
-    var(Key),memberchk_eq(Key,SourceParams),is_list(Pairs),Pairs=[_|_],
-    compiled_deps(Ref,_,_,Deps),
+    translated_from(Ref,_), compiled_deps(Ref,_,_,Deps),
     copy_term_nat(Target-RawBody,Head-Copied),
-    Head=..[_|HeadArgs],append(Params,[Value],HeadArgs),
-    maplist(var,Params),term_variables(Params,Vars),same_length(Params,Vars),
     ( nonvar(Copied),Copied=(First,Rest),First==(!) -> Body=Rest ; Body=Copied ),
-    inline_native_body(Body),
-    Params=Args,
+    inline_body_budget(Body,F,64,_),
+    Head=..[_|Formal],
+    maplist([A,P,(A=P)]>>true,Actual,Formal,Bindings),
+    append(Bindings,[Body],Sequence),goals_list_to_conj(Sequence,Inline),
     maplist([D]>>analysis_emit(dependency(D)),Deps).
 
-inline_native_body(Goal) :-
-    nonvar(Goal),
-    ( memberchk(Goal,[true,fail]) -> true
-    ; compound_name_arguments(Goal,Op,[A,B]),memberchk(Op,[',',';','->','*->'])
-      -> inline_native_body(A),inline_native_body(B)
-    ; functor(Goal,F,N),
-      memberchk(F/N,[arg/3,is/2,(=)/2,(==)/2,(\==)/2,
-                     (<)/2,(>)/2,(=<)/2,(>=)/2,(=:=)/2,(=\=)/2]),
-      predicate_property(Goal,built_in) ).
+inline_body_budget(Goal,Self,Before,After) :-
+    nonvar(Goal),Before>0,Left is Before-1,
+    ( compound(Goal),compound_name_arguments(Goal,Op,[A,B]),memberchk(Op,[',',';','->','*->'])
+      -> inline_body_budget(A,Self,Left,Middle),
+         inline_body_budget(B,Self,Middle,After)
+    ; callable(Goal),functor(Goal,F,_),
+      \+ memberchk(F,[!,':',Self]),
+      \+ predicate_property(Goal,meta_predicate(_)),After=Left ).
 
 % Inline single-clause, explicitly det numeric functions. Read
 % their source anew, rather than embedding a possibly stale compiled body:
@@ -1603,7 +1608,7 @@ numeric_scalar_expr(Source, Env, Goals, Value) :-
     nonvar(Source), Source=[Tag,Cond,Then,Else], Tag==if, !,
     nonvar(Cond), Cond=[Op,L,R], atom(Op),
     unique_fn_decl(Op, 2, ATs, OT), ATs==['Number','Number'], OT=='Bool',
-    builtin_codegen_hook(Op, 2, reified_comparison), builtin_untouched(Op),
+    builtin_codegen_hook(Op, 2, reified_comparison), builtin_untouched(Op,2),
     numeric_scalar_expr(L, Env, LGs, LV), numeric_scalar_expr(R, Env, RGs, RV),
     cmp_native(Op, LV, RV, Test),
     numeric_scalar_expr(Then, Env, TGs, TV),
@@ -1621,15 +1626,15 @@ numeric_scalar_expr(Source, Env, Goals, Value) :-
 
 numeric_expr(X, [], X) :- (var(X);number(X)), !.
 numeric_expr(Source, Goals, Value) :-
-    nonvar(Source), Source=[Op,L,R], atom(Op),
-    unique_fn_decl(Op, 2, ArgTypes, OutType),
-    ArgTypes == ['Number','Number'], OutType == 'Number',
-    numeric_expr(L, LGs, LV), numeric_expr(R, RGs, RV),
-    arith_inline(Op, [LV,RV], Value, Tail),
-    append(LGs, RGs, Inner), fuse_arithmetic_goals(Inner, Source, Tail, Goals),
-    analysis_emit(dependency(clause_set(Op/2))),
-    analysis_emit(dependency(decl(Op/2))),
-    analysis_emit(dependency(effect(Op/2))).
+    nonvar(Source), Source=[Op|Inputs], atom(Op),is_list(Inputs),length(Inputs,N),
+    unique_fn_decl(Op,N,ArgTypes,OutType),
+    maplist(==('Number'),ArgTypes),OutType=='Number',
+    maplist(numeric_expr,Inputs,Nested,Values),append(Nested,Inner),
+    arith_inline(Op,Values,Value,Tail),
+    fuse_arithmetic_goals(Inner,Source,Tail,Goals),
+    analysis_emit(dependency(clause_set(Op/N))),
+    analysis_emit(dependency(decl(Op/N))),
+    analysis_emit(dependency(effect(Op/N))).
 
 %A det function commits to its clause with the clause-entry cut. An
 %effect-polymorphic function cannot: its determinism is its closure argument's.

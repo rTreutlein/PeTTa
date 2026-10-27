@@ -2,6 +2,7 @@
 
 swipl -q -s tests/test_parser_swrite.pl -g run_tests -t halt || exit 1
 swipl -q -s tests/test_det_folds.pl -g "run_tests(det_folds)" -t halt || exit 1
+swipl -q -s tests/test_compiled_inlining.pl -g "run_tests(compiled_inlining)" -t halt || exit 1
 swipl -q -s tests/test_pattern_inlining.pl -g "run_tests(pattern_inlining)" -t halt || exit 1
 swipl -q -s tests/test_scalar_inlining.pl -g "run_tests(scalar_inlining)" -t halt || exit 1
 swipl -q -s tests/test_native_arithmetic.pl -g "run_tests(native_arithmetic)" -t halt || exit 1

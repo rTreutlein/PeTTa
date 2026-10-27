@@ -90,7 +90,7 @@ test(oracle_keeps_the_original_call_boundary) :-
     setup_call_cleanup(
         (retractall(user:oracle_det_mode(_)),assertz(user:oracle_det_mode(true))),
         (Args=[_,_,_],append(Args,[Out],All),Call=..['pattern-read'|All],
-         \+ pattern_inline('pattern-read',Args,Out,Call,_)),
+         \+ compiled_inline('pattern-read',Args,Out,Call,_)),
         (retractall(user:oracle_det_mode(_)),assertz(user:oracle_det_mode(false)))).
 
 % Rebuild a caller before its callee after changing a transitive numeric helper.
@@ -111,14 +111,14 @@ test(transitive_mutation_does_not_embed_a_stale_body) :-
     forall(member(F/A,['m-pattern-scale'/2,'z-pattern-read'/4,'a-pattern-use'/4]),
            (functor(H,F,A),clause(H,_,Current),\+ compiled_body_stale(Current))).
 
-test(patterned_heads_keep_the_original_call) :-
+test(patterned_heads_keep_the_original_match) :-
     clause('pattern-head-use'(_,_,_),Body),
-    sub_term(G,Body),nonvar(G),functor(G,'pattern-head',3),!,
+    \+ (sub_term(G,Body),nonvar(G),functor(G,'pattern-head',3)),
     'pattern-head-use'(['PPoint',2],['PPoint',3],5).
 
 test(repeated_head_parameters_keep_the_original_constraint) :-
     clause('pattern-repeat-use'(_,_,_),Body),
-    sub_term(G,Body),nonvar(G),functor(G,'pattern-repeat',3),!,
+    \+ (sub_term(G,Body),nonvar(G),functor(G,'pattern-repeat',3)),
     'pattern-repeat-use'(['PPoint',2],['PPoint',2],1.0),
     \+ 'pattern-repeat-use'(['PPoint',2],['PPoint',3],_).
 
