@@ -84,4 +84,21 @@ test(raw_prolog_replay_keeps_its_compilation_mode) :-
          current_prolog_flag(optimise,false)),
         abolish(user:native_raw/3)).
 
+test(unused_invalid_arithmetic_keeps_its_deferred_error) :-
+    setup_call_cleanup(
+        user:assert_compiled_clause(assertz,
+            (native_deferred(B,R) :- (B==true -> R=ok ; R is nevercalled+42)),Ref),
+        (user:native_deferred(true,ok),current_prolog_flag(optimise,false),
+         catch(user:native_deferred(false,_),error(type_error(evaluable,_),_),Caught=true),
+         Caught==true),
+        erase(Ref)).
+
+test(deferred_error_fallback_restores_enabled_host_mode) :-
+    setup_call_cleanup(set_prolog_flag(optimise,true),
+        setup_call_cleanup(
+            user:assert_compiled_clause(assertz,(native_bad(R):-R is nevercalled),Ref),
+            current_prolog_flag(optimise,true),
+            erase(Ref)),
+        set_prolog_flag(optimise,false)).
+
 :- end_tests(native_arithmetic).

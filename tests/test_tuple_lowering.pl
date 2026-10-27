@@ -156,11 +156,11 @@ test(oracle_call_boundary_is_retained) :-
     setup_call_cleanup(
         (retractall(user:oracle_det_mode(_)),assertz(user:oracle_det_mode(true))),
         (Args=[_,_],append(Args,[Out],All),Call=..['arithmetic-pair'|All],
-         \+ numeric_tuple_inline('arithmetic-pair',Args,Out,Call,_)),
+         \+ numeric_inline('arithmetic-pair',Args,Out,Call,_)),
         (retractall(user:oracle_det_mode(_)),assertz(user:oracle_det_mode(false)))).
 
 test(variable_operator_is_not_specialized) :-
-    \+ numeric_tuple_expr([Op,1,2],_,_), var(Op).
+    \+ numeric_expr([Op,1,2],_,_), var(Op).
 
 test(inlined_producer_records_transitive_arithmetic_dependencies) :-
     clause('arithmetic-pair-total'(_,_,_),_,Ref),

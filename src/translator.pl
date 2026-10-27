@@ -28,9 +28,14 @@ functional_pattern_application([F|Args], F, Args) :-
 % the host's compilation mode or the compilation of imported Prolog sources.
 assert_compiled_clause(Assert, Clause, Ref) :-
     current_prolog_flag(optimise, Previous),
-    setup_call_cleanup(set_prolog_flag(optimise, true),
-                       call(Assert, Clause, Ref),
-                       set_prolog_flag(optimise, Previous)).
+    setup_call_cleanup(
+        set_prolog_flag(optimise, true),
+        catch(call(Assert, Clause, Ref),
+              error(type_error(evaluable,_),_),
+              % An unused branch may contain arithmetic that fails only if
+              % reached. Native compilation must not reject that definition.
+              (set_prolog_flag(optimise, false), call(Assert, Clause, Ref))),
+        set_prolog_flag(optimise, Previous)).
 
 %Flatten (= Head Body) MeTTa function into a Prolog clause. Dependencies are
 %those observed by all nested analyses; assertion sites attach them to the real
@@ -1501,7 +1506,7 @@ build_direct_call(Fun, Src, AVs, Out, Inner, Extra, Goals) :- length(AVs, N),
                                                               ( ( current_predicate(Fun/Arity) ; catch(arity(Fun, Arity), _, fail) ),
                                                                 \+ ( current_op(_, _, Fun), Arity =< 2 )
                                                                 -> resolve_memoization(Fun, AVs, Out, Goal0),
-                                                                   ( numeric_tuple_inline(Fun, AVs, Out, Goal0, Inline)
+                                                                   ( numeric_inline(Fun, AVs, Out, Goal0, Inline)
                                                                      -> append([Inner, Inline, Extra], Goals)
                                                                      ; commit_call(Fun, Src, AVs, Out, Goal0, Goal),
                                                                        append(Inner, [Goal|Extra], Goals) )
@@ -1510,41 +1515,74 @@ build_direct_call(Fun, Src, AVs, Out, Inner, Extra, Goals) :- length(AVs, N),
                                                                    append(Inner, Extra, Goals)
                                                                  ; append(Inner, [throw_function_overapplication(Fun, N)|Extra], Goals) ).
 
-% Inline only single-clause, explicitly det arithmetic tuple producers. Read
+% Inline single-clause, explicitly det numeric functions. Read
 % their source anew, rather than embedding a possibly stale compiled body:
 % dependency invalidation may rebuild caller and callee in either order.
-% Keep entry unification before arithmetic, exactly as the tuple-valued head
-% does, and respect memoization and oracle call boundaries.
-numeric_tuple_inline(F, Args, Out, Goal, [Out=Values|Body]) :-
+% Keep entry unification before arithmetic, exactly as the original head does,
+% and respect memoization and oracle call boundaries.
+numeric_inline(F, Args, Out, Goal, [Out=Value|Body]) :-
     oracle_mode(false), oracle_det_mode(false),
     \+ current_compiling_caller(F, _),
     append(Args, [Out], CallArgs), Direct =.. [F|CallArgs], Goal == Direct,
     length(Args, N),
     findall(ATs-OT-Det,
             (declared_fn_type(F, ATs, OT, Det), length(ATs, N)),
-            [ArgTypes-FieldTypes-det]),
+            [ArgTypes-OutType-det]),
     maplist(==('Number'), ArgTypes),
-    is_list(FieldTypes), FieldTypes=[_,_|_], maplist(==('Number'), FieldTypes),
     Arity is N+1, functor(Head, F, Arity),
     predicate_property(Head, number_of_clauses(1)),
-    clause(Head, _, Ref), translated_from(Ref, [=,[F|Params],Fields]),
+    clause(Head, _, Ref), translated_from(Ref, [=,[F|Params],Source]),
     same_length(Params, Args), maplist(var, Params),
     term_variables(Params, Unique), same_length(Params, Unique),
-    is_list(Fields), same_length(Fields, FieldTypes),
-    % Bare parameters can stay unbound. Only literal or computed numbers
-    % support the later scalar replacement proof.
-    maplist(nonvar, Fields),
+    ( OutType == 'Number'
+      -> numeric_scalar_expr(Source, Params, Arithmetic, Value)
+    ; is_list(OutType), OutType=[_,_|_], maplist(==('Number'), OutType),
+      is_list(Source), same_length(Source, OutType),
+      % Bare tuple fields can stay unbound and retain observable cell sharing.
+      maplist(nonvar, Source),
+      maplist(numeric_expr, Source, Nested, Value), append(Nested, Arithmetic) ),
+    % Lower with fresh formal parameters, then connect actual arguments.
+    % Folding actual constants early could turn a computed result into a
+    % head constraint and suppress an earlier arithmetic exception.
     Params=Args,
-    maplist(numeric_tuple_expr, Fields, Nested, Values), append(Nested, Arithmetic),
     det_boundness_checks(F, Args, Checks), append(Checks, Arithmetic, Body),
     analysis_emit(dependency(clause_set(F/N))).
 
-numeric_tuple_expr(X, [], X) :- (var(X);number(X)), !.
-numeric_tuple_expr(Source, Goals, Value) :-
+numeric_scalar_expr(Source, Env, Goals, Value) :-
+    nonvar(Source), Source=[Tag,Binds,Body], Tag=='let*', !,
+    letstar_to_rec_let(Binds, Body, Let),
+    numeric_scalar_expr(Let, Env, Goals, Value).
+numeric_scalar_expr(Source, Env, Goals, Value) :-
+    nonvar(Source), Source=[Tag,Pattern,Rhs,Rest], Tag==let, var(Pattern), !,
+    numeric_scalar_expr(Rhs, Env, First, Computed),
+    numeric_scalar_expr(Rest, [Pattern|Env], Last, Value),
+    append([First,[Pattern=Computed],Last], Goals).
+numeric_scalar_expr(Source, Env, Goals, Value) :-
+    nonvar(Source), Source=[Tag,Cond,Then,Else], Tag==if, !,
+    nonvar(Cond), Cond=[Op,L,R], atom(Op),
+    unique_fn_decl(Op, 2, ATs, OT), ATs==['Number','Number'], OT=='Bool',
+    builtin_codegen_hook(Op, 2, reified_comparison), builtin_untouched(Op),
+    numeric_scalar_expr(L, Env, LGs, LV), numeric_scalar_expr(R, Env, RGs, RV),
+    cmp_native(Op, LV, RV, Test),
+    numeric_scalar_expr(Then, Env, TGs, TV),
+    numeric_scalar_expr(Else, Env, EGs, EV),
+    append(TGs, [Value=TV], TOut), goals_list_to_conj(TOut, TConj),
+    append(EGs, [Value=EV], EOut), goals_list_to_conj(EOut, EConj),
+    append([LGs,RGs,[(Test -> TConj ; EConj)]], Goals),
+    analysis_emit(dependency(clause_set(Op/2))),
+    analysis_emit(dependency(decl(Op/2))),
+    analysis_emit(dependency(effect(Op/2))).
+numeric_scalar_expr(Source, Env, Goals, Value) :-
+    term_variables(Source, Vars),
+    forall(member(V,Vars), memberchk_eq(V,Env)),
+    numeric_expr(Source, Goals, Value).
+
+numeric_expr(X, [], X) :- (var(X);number(X)), !.
+numeric_expr(Source, Goals, Value) :-
     nonvar(Source), Source=[Op,L,R], atom(Op),
     unique_fn_decl(Op, 2, ArgTypes, OutType),
     ArgTypes == ['Number','Number'], OutType == 'Number',
-    numeric_tuple_expr(L, LGs, LV), numeric_tuple_expr(R, RGs, RV),
+    numeric_expr(L, LGs, LV), numeric_expr(R, RGs, RV),
     arith_inline(Op, [LV,RV], Value, Tail),
     append(LGs, RGs, Inner), fuse_arithmetic_goals(Inner, Source, Tail, Goals),
     analysis_emit(dependency(clause_set(Op/2))),
