@@ -86,7 +86,7 @@ test(escaping_closure_is_not_flattened) :-
     ho_specialization('flat-test-observed',S),\+ho_capture_layout(S,_).
 test(observed_output_keeps_the_original_loop) :-
     S='flat-test-each_Spec_[partial(flat-test-shift,[_])]',
-    Goal=..[S,2,[1,2],Out],
+    Goal=..[S,[1,2],2,Out],
     fresh_result_calls(Goal,observed(Out),Copy,[]),Copy==Goal.
 test(failed_condition_is_not_a_proper_list_proof) :-
     \+seen_proper_list(X,failed(is_list(X))).

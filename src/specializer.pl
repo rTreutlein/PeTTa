@@ -113,6 +113,8 @@ specialize_call(HV, AVs, Out, Goal) :- %1. Retrieve a copy of all meta-clauses s
 % A captured numeric environment can be passed in registers when the source
 % uses its closure only as a callee or forwards it unchanged to this function.
 % No closure value is exposed, and capture binding/error timing stays intact.
+% Keep ordinary inputs before environment fields so a leading list argument
+% retains first-argument indexing after its closure parameter disappears.
 capture_signature(F,Actual,Metas,captures(I,Fn,Count),[Arrow|FlatTs]) :-
     findall(ATs-OT-D,declared_fn_type(F,ATs,OT,D),[Types-Out-Det]),
     nth0(I,Actual,Closure),nonvar(Closure),Closure=partial(Fn,Captured),
@@ -132,7 +134,7 @@ capture_signature(F,Actual,Metas,captures(I,Fn,Count),[Arrow|FlatTs]) :-
             \+ contains_var(V,Prefix-Suffix),capture_uses(Body,V,F,I))),
     (Det=effect(_) -> det_arrow_head(nondet,Arrow) ; det_arrow_head(Det,Arrow)),
     length(Before,I),append(Before,[_|After],Types),
-    append([Before,CaptureTypes,After,[Out]],FlatTs),!.
+    append([Before,After,CaptureTypes,[Out]],FlatTs),!.
 
 capture_uses(Expr,V,F,I) :-
     ( var(Expr) -> Expr\==V
@@ -150,7 +152,7 @@ specialization_arguments(Name,Args,Flat) :-
       -> length(Before,I),append(Before,[Closure|After],Args),
          ( var(Closure) -> length(Captured,N)
          ; Closure=partial(Fn,Captured),length(Captured,N) ),
-         append([Before,Captured,After],Flat)
+         append([Before,After,Captured],Flat)
     ; Flat=Args ).
 
 %Extracts clause-head variables and their call-site copies, producing eligible Var–Copy pairs for specialization:
