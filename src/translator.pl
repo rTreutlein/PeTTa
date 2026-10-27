@@ -61,7 +61,9 @@ translate_clause(Input, Clause, ConstrainArgs, Dependencies) :-
 % preserves term sharing without touching source metadata.
 fold_clause_bindings(Goal, Before, Folded) :-
     nonvar(Goal), Goal = (A,B), !,
-    ( private_data_reduce(A, Before, Binding)
+    ( private_numeric_tuple(A, B, Before, Rest)
+      -> fold_clause_bindings(Rest, Before, Folded)
+    ; private_data_reduce(A, Before, Binding)
       -> fold_clause_bindings((Binding,B), Before, Folded)
     ; private_alias(A, Before, B)
       -> fold_clause_bindings(B, Before, Folded)
@@ -91,6 +93,33 @@ private_data_reduce(Goal, Before, fresh_data_list(List,Out)) :-
     var(Out), \+ contains_var(Out, List),
     term_variables([Out|List], Vars),
     \+ ( member(V, Vars), contains_var(V, Before) ).
+
+% Scalar replacement is safe only when the fresh tuple is consumed once and
+% every field becomes a number before any observable operation. In particular,
+% an unbound returned field must retain the tuple's original cell sharing.
+private_numeric_tuple(Goal, Body, Before, Rest) :-
+    private_data_reduce(Goal, Before, fresh_data_list(Fields, Pair)),
+    maplist(var, Fields),
+    nonvar(Body), Body = (Binding,Rest),
+    nonvar(Binding), Binding = (Result=Values), Result == Pair,
+    is_list(Values), same_length(Fields, Values),
+    occurrences_of_var(Pair, Body, 1),
+    term_variables(Values, Vars),
+    \+ (member(V, Vars), contains_var(V, Before)),
+    maplist(numeric_tuple_field, Values),
+    include(var, Values, Needed),
+    numeric_tuple_assignments(Rest, Needed),
+    maplist(=, Fields, Values).
+
+numeric_tuple_field(V) :- var(V), !.
+numeric_tuple_field(V) :- number(V).
+
+numeric_tuple_assignments(_, []) :- !.
+numeric_tuple_assignments(Body, Needed) :-
+    ( nonvar(Body), Body = (Goal,Rest) -> true ; Goal=Body, Rest=true ),
+    nonvar(Goal), Goal = (Assigned is _), var(Assigned),
+    exclude(==(Assigned), Needed, Remaining),
+    numeric_tuple_assignments(Rest, Remaining).
 
 % Keep this call boundary: the input tuple and returned outer cell are distinct,
 % while the tail is shared, exactly as reduce/2's inert-data branch constructs.
@@ -1464,12 +1493,55 @@ build_direct_call(Fun, Src, AVs, Out, Inner, Extra, Goals) :- length(AVs, N),
                                                               ( ( current_predicate(Fun/Arity) ; catch(arity(Fun, Arity), _, fail) ),
                                                                 \+ ( current_op(_, _, Fun), Arity =< 2 )
                                                                 -> resolve_memoization(Fun, AVs, Out, Goal0),
-                                                                   commit_call(Fun, Src, AVs, Out, Goal0, Goal),
-                                                                   append(Inner, [Goal|Extra], Goals)
+                                                                   ( numeric_tuple_inline(Fun, AVs, Out, Goal0, Inline)
+                                                                     -> append([Inner, Inline, Extra], Goals)
+                                                                     ; commit_call(Fun, Src, AVs, Out, Goal0, Goal),
+                                                                       append(Inner, [Goal|Extra], Goals) )
                                                               ; incomplete_application_kind(Fun, Arity, partial)
                                                                 -> Out = partial(Fun, AVs),
                                                                    append(Inner, Extra, Goals)
                                                                  ; append(Inner, [throw_function_overapplication(Fun, N)|Extra], Goals) ).
+
+% Inline only single-clause, explicitly det arithmetic tuple producers. Read
+% their source anew, rather than embedding a possibly stale compiled body:
+% dependency invalidation may rebuild caller and callee in either order.
+% Keep entry unification before arithmetic, exactly as the tuple-valued head
+% does, and respect memoization and oracle call boundaries.
+numeric_tuple_inline(F, Args, Out, Goal, [Out=Values|Body]) :-
+    oracle_mode(false), oracle_det_mode(false),
+    \+ current_compiling_caller(F, _),
+    append(Args, [Out], CallArgs), Direct =.. [F|CallArgs], Goal == Direct,
+    length(Args, N),
+    findall(ATs-OT-Det,
+            (declared_fn_type(F, ATs, OT, Det), length(ATs, N)),
+            [ArgTypes-FieldTypes-det]),
+    maplist(==('Number'), ArgTypes),
+    is_list(FieldTypes), FieldTypes=[_,_|_], maplist(==('Number'), FieldTypes),
+    Arity is N+1, functor(Head, F, Arity),
+    predicate_property(Head, number_of_clauses(1)),
+    clause(Head, _, Ref), translated_from(Ref, [=,[F|Params],Fields]),
+    same_length(Params, Args), maplist(var, Params),
+    term_variables(Params, Unique), same_length(Params, Unique),
+    is_list(Fields), same_length(Fields, FieldTypes),
+    % Bare parameters can stay unbound. Only literal or computed numbers
+    % support the later scalar replacement proof.
+    maplist(nonvar, Fields),
+    Params=Args,
+    maplist(numeric_tuple_expr, Fields, Nested, Values), append(Nested, Arithmetic),
+    det_boundness_checks(F, Args, Checks), append(Checks, Arithmetic, Body),
+    analysis_emit(dependency(clause_set(F/N))).
+
+numeric_tuple_expr(X, [], X) :- (var(X);number(X)), !.
+numeric_tuple_expr(Source, Goals, Value) :-
+    nonvar(Source), Source=[Op,L,R], atom(Op),
+    unique_fn_decl(Op, 2, ArgTypes, OutType),
+    ArgTypes == ['Number','Number'], OutType == 'Number',
+    numeric_tuple_expr(L, LGs, LV), numeric_tuple_expr(R, RGs, RV),
+    arith_inline(Op, [LV,RV], Value, Tail),
+    append(LGs, RGs, Inner), fuse_arithmetic_goals(Inner, Source, Tail, Goals),
+    analysis_emit(dependency(clause_set(Op/2))),
+    analysis_emit(dependency(decl(Op/2))),
+    analysis_emit(dependency(effect(Op/2))).
 
 %A det function commits to its clause with the clause-entry cut. An
 %effect-polymorphic function cannot: its determinism is its closure argument's.
