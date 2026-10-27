@@ -24,6 +24,14 @@ functional_pattern_application([F|Args], F, Args) :-
     atom(F), F \== cons, fun(F),
     is_list(Args).
 
+% Publish generated code with native arithmetic instructions, without changing
+% the host's compilation mode or the compilation of imported Prolog sources.
+assert_compiled_clause(Assert, Clause, Ref) :-
+    current_prolog_flag(optimise, Previous),
+    setup_call_cleanup(set_prolog_flag(optimise, true),
+                       call(Assert, Clause, Ref),
+                       set_prolog_flag(optimise, Previous)).
+
 %Flatten (= Head Body) MeTTa function into a Prolog clause. Dependencies are
 %those observed by all nested analyses; assertion sites attach them to the real
 %clause reference with record_compiled_dependencies/3.
@@ -327,7 +335,7 @@ swap_staged_function(F, Us, Staged) :-
 
 assert_staged_clauses([]).
 assert_staged_clauses([staged(_, Term, OriginFile, Clause, Dependencies)|Ss]) :-
-    assertz(Clause, NewRef),
+    assert_compiled_clause(assertz, Clause, NewRef),
     assertz(translated_from(NewRef, Term)),
     Term = [=, [G|SourceArgs], _],
     length(SourceArgs, N),
@@ -943,7 +951,7 @@ translate_expr([H0|T0], Expectation, Goals, Out) :-
                                                    IsolatedLambdaSource, Clause,
                                                    true, LambdaDependencies)),
                                            register_fun(F),
-                                           assertz(Clause, LambdaRef),
+                                           assert_compiled_clause(assertz, Clause, LambdaRef),
                                            assertz(translated_from(LambdaRef, IsolatedLambdaSource)),
                                            length(FullArgs, N),
                                            record_compiled_dependencies(LambdaRef, F/N, LambdaDependencies),

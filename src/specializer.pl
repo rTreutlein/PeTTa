@@ -60,7 +60,7 @@ specialize_call(HV, AVs, Out, Goal) :- %1. Retrieve a copy of all meta-clauses s
                                                nb_getval(specneeded, true),
                                                %4.5 Assert and print each of the created specializations:
                                                forall(member(clause_info(Input, Clause, Dependencies), ClauseInfos),
-                                               ( asserta(Clause, Ref),
+                                               ( assert_compiled_clause(asserta, Clause, Ref),
                                                  assertz(translated_from(Ref, Input)),
                                                  Input = [=, [_|SpecArgs], _],
                                                  length(SpecArgs, SpecN),
