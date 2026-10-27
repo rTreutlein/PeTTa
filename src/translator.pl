@@ -1584,7 +1584,7 @@ constructor_inline(F,[H,T],Out,Goal,(Out=[H|T])) :-
 
 % Inline small typed clauses without reinterpreting their source. The head is
 % matched at the call, before the copied body; its primitive calls stay calls.
-% A 64-node goal budget bounds transitive code growth. Cuts and meta calls
+% A 128-node goal budget bounds transitive code growth. Cuts and meta calls
 % retain their predicate boundary, and invalidation excludes stale bodies.
 compiled_inline(F, Args, Out, Goal, Inline) :-
     oracle_mode(false), oracle_det_mode(false),
@@ -1603,7 +1603,7 @@ compiled_inline(F, Args, Out, Goal, Inline) :-
     translated_from(Ref,_), compiled_deps(Ref,_,_,Deps),
     copy_term_nat(Target-RawBody,Head-Copied),
     ( nonvar(Copied),Copied=(First,Rest),First==(!) -> Body=Rest ; Body=Copied ),
-    inline_body_budget(Body,F,64,_),
+    inline_body_budget(Body,F,128,_),
     Head=..[_|Formal],
     maplist([A,P,(A=P)]>>true,Actual,Formal,Bindings),
     append(Bindings,[Body],Sequence),goals_list_to_conj(Sequence,Inline),
