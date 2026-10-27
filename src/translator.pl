@@ -1,4 +1,6 @@
 :- dynamic translated_from/2.
+:- dynamic static_compilation_assumption/2.
+:- ensure_loaded(constructor_loops).
 
 
 %Pattern matching, structural and functional/relational constraints on arguments:
@@ -59,13 +61,23 @@ translate_clause(Input, Clause, ConstrainArgs, Dependencies) :-
                ExtraDependencies),
         analysis_make_proof(compiled_clause(F/N), translated, Events,
                             ExtraDependencies, Proof),
-        analysis_proof_dependencies(Proof, Dependencies),
+        analysis_proof_dependencies(Proof, Dependencies0),
         analysis_reemit_proof(Proof),
         % Work on the same plain copy assertion would make. Never alias the
         % source equation's variables or its inference attributes in place.
         copy_term_nat(RawClause, (Head :- Body)),
-        fold_clause_bindings(Body, Head, Folded),
-        Clause = (Head :- Folded).
+        goal_sequence(Body, Sequence),goals_list_to_conj(Sequence, LinearBody),
+        % Inlined head aliases must disappear before their private numeric
+        % tuples become eligible for scalar replacement.
+        fold_clause_bindings(LinearBody, Head, Aliased),
+        fold_clause_bindings(Aliased, Head, Folded),
+        (ho_fresh_result(F,Parent)
+          -> fresh_result_clause(Parent,Head,Folded,FinalHead,FinalBody),
+             length(Args,SourceN),Added=[clause_set(Parent/SourceN),decl(Parent/SourceN)]
+        ; fresh_result_calls(Folded,Head,FinalBody,Added),FinalHead=Head),
+        append(Dependencies0,Added,AllDeps),sort(AllDeps,Dependencies),
+        maplist([D]>>analysis_emit(dependency(D)),Added),
+        Clause = (FinalHead :- FinalBody).
 
 % Before contains every head/outside-branch variable and the goals already
 % executed on this path. Only a variable first used at an alias can disappear;
@@ -111,7 +123,11 @@ private_data_reduce(Goal, Before, fresh_data_list(List,Out)) :-
 % every field becomes a number before any observable operation. In particular,
 % an unbound returned field must retain the tuple's original cell sharing.
 private_numeric_tuple(Goal, Body, Before, Rest) :-
-    private_data_reduce(Goal, Before, fresh_data_list(Fields, Pair)),
+    ( private_data_reduce(Goal, Before, fresh_data_list(Fields, Pair)) -> true
+    ; nonvar(Goal),Goal=fresh_data_list(Fields,Pair),
+      is_list(Fields),Fields=[_|_],var(Pair),\+contains_var(Pair,Fields),
+      term_variables([Pair|Fields],Fresh),
+      \+ (member(V,Fresh),contains_var(V,Before)) ),
     maplist(var, Fields),
     nonvar(Body), Body = (Binding,Rest),
     nonvar(Binding), Binding = (Result=Values), Result == Pair,
@@ -1517,7 +1533,12 @@ build_direct_call(Fun, Src, AVs, Out, Inner, Extra, Goals) :- length(AVs, N),
                                                               ( ( current_predicate(Fun/Arity) ; catch(arity(Fun, Arity), _, fail) ),
                                                                 \+ ( current_op(_, _, Fun), Arity =< 2 )
                                                                 -> resolve_memoization(Fun, AVs, Out, Goal0),
-                                                                   ( numeric_inline(Fun, AVs, Out, Goal0, Inline)
+                                                                   ( constructor_inline(Fun, AVs, Out, Goal0, Native)
+                                                                     -> append(Inner,[Native|Extra],Goals)
+                                                                     ; static_arithmetic_inline(Fun,AVs,Out,Goal0,Arithmetic)
+                                                                       -> fuse_arithmetic_goals(Inner,Src,[Arithmetic],WithArithmetic),
+                                                                          append(WithArithmetic,Extra,Goals)
+                                                                     ; numeric_inline(Fun, AVs, Out, Goal0, Inline)
                                                                      -> append([Inner, Inline, Extra], Goals)
                                                                      ; compiled_inline(Fun, AVs, Out, Goal0, Inlined)
                                                                        -> commit_call(Fun, Src, AVs, Out, Inlined, Goal),
@@ -1528,6 +1549,38 @@ build_direct_call(Fun, Src, AVs, Out, Inner, Extra, Goals) :- length(AVs, N),
                                                                 -> Out = partial(Fun, AVs),
                                                                    append(Inner, Extra, Goals)
                                                                  ; append(Inner, [throw_function_overapplication(Fun, N)|Extra], Goals) ).
+
+% A static imported scalar with one native is/2 body has no hidden effects.
+% Re-importing a function used this way invalidates its recorded callers.
+static_arithmetic_inline(F,Args,Out,Goal,(Out is Expr)) :-
+    oracle_mode(false),oracle_det_mode(false),length(Args,N),A is N+1,
+    append(Args,[Out],All),Direct=..[F|All],Goal==Direct,
+    findall(ATs-OT-D,(declared_fn_type(F,ATs,OT,D),length(ATs,N)),[Types-'Number'-det]),
+    maplist(==('Number'),Types),functor(Head,F,A),
+    predicate_property(Head,static),predicate_property(Head,number_of_clauses(1)),
+    clause(Head,Body),nonvar(Body),Body=(Value is Expr),var(Value),
+    Head=..[_|Formals],append(Params,[Result],Formals),Value==Result,
+    maplist(var,Formals),term_variables(Formals,Vars),same_length(Formals,Vars),
+    term_variables(Expr,Used),forall(member(V,Used),memberchk_eq(V,Params)),
+    native_scalar_expression(Expr),Params=Args,
+    (static_compilation_assumption(F,N) -> true ; assertz(static_compilation_assumption(F,N))),
+    analysis_emit(dependency(clause_set(F/N))).
+
+native_scalar_expression(E) :-
+    (var(E);number(E)),!.
+native_scalar_expression(E) :-
+    compound(E),compound_name_arguments(E,F,As),length(As,N),
+    memberchk(F/N,[(+)/2,(-)/2,(-)/1,(*)/2,(/)/2,(**)/2,mod/2,min/2,max/2,
+                  abs/1,sqrt/1,log/1,exp/1,lgamma/1,float/1,ceil/1,ceiling/1,(>>)/2,xor/2,(/\)/2]),
+    maplist(native_scalar_expression,As).
+
+% Keep constructor matching after its evaluated arguments. In particular a
+% caller's output constraint must not suppress an earlier callback exception.
+constructor_inline(F,[H,T],Out,Goal,(Out=[H|T])) :-
+    oracle_mode(false),oracle_det_mode(false),
+    builtin_codegen_hook(F,2,list_cons),builtin_untouched(F,2),
+    Direct=..[F,H,T,Out],Goal==Direct,
+    analysis_emit(dependency(clause_set(F/2))).
 
 % Inline small typed clauses without reinterpreting their source. The head is
 % matched at the call, before the copied body; its primitive calls stay calls.

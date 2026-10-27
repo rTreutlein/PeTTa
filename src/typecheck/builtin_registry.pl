@@ -140,8 +140,8 @@ builtin_spec('is-space'/1, implementation(metta), typing(signature(unspecified, 
 % argument knows: (cdr-atom $xs) on a (List Choice) would come back as
 % (List %Undefined%), and a global (List $item) for append would reject legal
 % heterogeneous lists. The rules keep element types and reject nothing.
-builtin_spec(cons/2, implementation(metta), typing(contextual(cons_list)), evaluation(eager), cardinality(fixed(det)), lowering(generic)).
-builtin_spec('cons-atom'/2, implementation(metta), typing(contextual(cons_list)), evaluation(eager), cardinality(fixed(det)), lowering(generic)).
+builtin_spec(cons/2, implementation(metta), typing(contextual(cons_list)), evaluation(eager), cardinality(fixed(det)), lowering(special(list_cons))).
+builtin_spec('cons-atom'/2, implementation(metta), typing(contextual(cons_list)), evaluation(eager), cardinality(fixed(det)), lowering(special(list_cons))).
 builtin_spec('decons-atom'/1, implementation(metta), typing(untyped), evaluation(eager), cardinality(fixed(semidet)), lowering(generic)).
 builtin_spec(decons/1, implementation(metta), typing(untyped), evaluation(eager), cardinality(fixed(semidet)), lowering(generic)).
 builtin_spec('first-from-pair'/1, implementation(metta), typing(untyped), evaluation(eager), cardinality(fixed(semidet)), lowering(generic)).
