@@ -37,7 +37,7 @@ translate_clause(Input, Clause, ConstrainArgs, Dependencies) :-
             analysis_collect(
                 with_compiling_caller(
                     F, N,
-                    translate_clause_core(Input, Clause, ConstrainArgs)),
+                    translate_clause_core(Input, RawClause, ConstrainArgs)),
                 Events)),
         analysis_term_dependencies(SourceBody, TermDependencies),
         analysis_function_decl_dependencies(F, DeclDependencies),
@@ -47,7 +47,44 @@ translate_clause(Input, Clause, ConstrainArgs, Dependencies) :-
         analysis_make_proof(compiled_clause(F/N), translated, Events,
                             ExtraDependencies, Proof),
         analysis_proof_dependencies(Proof, Dependencies),
-        analysis_reemit_proof(Proof).
+        analysis_reemit_proof(Proof),
+        % Work on the same plain copy assertion would make. Never alias the
+        % source equation's variables or its inference attributes in place.
+        copy_term_nat(RawClause, (Head :- Body)),
+        fold_clause_aliases(Body, Head, Folded),
+        Clause = (Head :- Folded).
+
+% Before contains every head/outside-branch variable and the goals already
+% executed on this path. Only a variable first used at an alias can disappear;
+% binding it to the other variable cannot affect an earlier observation. The
+% rest of the conjunction shares the plain copied variables, so substitution
+% preserves term sharing without touching source metadata.
+fold_clause_aliases(Goal, Before, Folded) :-
+    nonvar(Goal), Goal = (A,B), !,
+    ( private_alias(A, Before, B)
+      -> fold_clause_aliases(B, Before, Folded)
+    ; fold_clause_aliases(A, (Before,B), A1),
+      fold_clause_aliases(B, (Before,A1), B1),
+      ( A1 == true -> Folded = B1
+      ; B1 == true -> Folded = A1
+      ; Folded = (A1,B1) ) ).
+fold_clause_aliases(Goal, Outside, Folded) :-
+    compound(Goal), compound_name_arguments(Goal, Op, [A,B]),
+    memberchk(Op, [;,->,*->]), !,
+    fold_clause_aliases(A, (Outside,B), A1),
+    fold_clause_aliases(B, (Outside,A), B1),
+    compound_name_arguments(Folded, Op, [A1,B1]).
+fold_clause_aliases(Goal, Before, true) :- private_alias(Goal, Before, true), !.
+fold_clause_aliases(Goal, _, Goal).
+
+private_alias(Goal, Before, Rest) :-
+    nonvar(Goal), Goal = (X=Y),
+    ( var(X), var(Y)
+      -> ( \+ contains_var(X, Before) -> true ; \+ contains_var(Y, Before) ), X=Y
+    ; var(X)
+      -> ground(Y), \+ contains_var(X, (Before,Rest))
+    ; var(Y)
+      -> ground(X), \+ contains_var(Y, (Before,Rest)) ).
 
 with_compiling_caller(F, N, Goal) :-
     ( nb_current('$compiling_caller', Previous) -> true ; Previous = none ),
