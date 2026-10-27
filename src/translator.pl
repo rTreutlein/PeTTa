@@ -1127,7 +1127,8 @@ translate_typed_call(Fun, Bound, Args, GsH, Goals, Out) :-
                   %single declaration, so the call filters on the output type:
                   overload_out_guard(MultiDecl, Fun, Out, OT, Extra),
                   ( MultiDecl == false, arith_inline(Fun, AVs, Out, ArithGs)
-                    -> append(Inner, ArithGs, Goals)
+                    -> append(Bound, Args, Src),
+                       fuse_arithmetic_goals(Inner, Src, ArithGs, Goals)
                      ; append(Bound, Args, Src),
                        build_call_or_partial(Fun, Src, AVs, Out, Inner, Extra, Goals) ),
                   ( ArgStatus == verified
@@ -1342,6 +1343,28 @@ arith_inline(Fun, [A, B], Out, Gs) :- builtin_codegen_hook(Fun, 2, arithmetic_na
                                       ( number(A), number(B)
                                         -> catch((Out is Expr, Gs = []), _, Gs = [Out is Expr])
                                          ; Gs = [Out is Expr] ).
+
+% Fuse only the trailing, single-use arithmetic temporaries produced while
+% translating this call's arguments. A source variable or an earlier reference
+% is observable and must keep its binding. A non-arithmetic goal is a barrier:
+% postponing a possibly throwing calculation across it would reorder effects.
+% Substitution preserves the expression tree, including floating-point order.
+fuse_arithmetic_goals(Inner, Source, [Out is Expr], Goals) :- !,
+    reverse(Inner, Reversed),
+    fuse_arithmetic_tail(Reversed, Source, Expr, Kept, Fused),
+    reverse(Kept, Prefix),
+    append(Prefix, [Out is Fused], Goals).
+fuse_arithmetic_goals(Inner, _, Arithmetic, Goals) :-
+    append(Inner, Arithmetic, Goals).
+
+fuse_arithmetic_tail([Goal|Earlier], Source, Expr, Kept, Fused) :-
+    nonvar(Goal), Goal = (Temporary is Child), var(Temporary),
+    \+ contains_var(Temporary, Source),
+    \+ contains_var(Temporary, Earlier),
+    occurrences_of_var(Temporary, Expr, 1), !,
+    substitute_source_var(Temporary, Child, Expr, Combined),
+    fuse_arithmetic_tail(Earlier, Source, Combined, Kept, Fused).
+fuse_arithmetic_tail(Kept, _, Expr, Kept, Expr).
 
 arith_op('+', A, B, A + B).
 arith_op('-', A, B, A - B).
