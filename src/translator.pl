@@ -51,7 +51,7 @@ translate_clause(Input, Clause, ConstrainArgs, Dependencies) :-
         % Work on the same plain copy assertion would make. Never alias the
         % source equation's variables or its inference attributes in place.
         copy_term_nat(RawClause, (Head :- Body)),
-        fold_clause_aliases(Body, Head, Folded),
+        fold_clause_bindings(Body, Head, Folded),
         Clause = (Head :- Folded).
 
 % Before contains every head/outside-branch variable and the goals already
@@ -59,23 +59,42 @@ translate_clause(Input, Clause, ConstrainArgs, Dependencies) :-
 % binding it to the other variable cannot affect an earlier observation. The
 % rest of the conjunction shares the plain copied variables, so substitution
 % preserves term sharing without touching source metadata.
-fold_clause_aliases(Goal, Before, Folded) :-
+fold_clause_bindings(Goal, Before, Folded) :-
     nonvar(Goal), Goal = (A,B), !,
-    ( private_alias(A, Before, B)
-      -> fold_clause_aliases(B, Before, Folded)
-    ; fold_clause_aliases(A, (Before,B), A1),
-      fold_clause_aliases(B, (Before,A1), B1),
+    ( private_data_reduce(A, Before, Binding)
+      -> fold_clause_bindings((Binding,B), Before, Folded)
+    ; private_alias(A, Before, B)
+      -> fold_clause_bindings(B, Before, Folded)
+    ; fold_clause_bindings(A, (Before,B), A1),
+      fold_clause_bindings(B, (Before,A1), B1),
       ( A1 == true -> Folded = B1
       ; B1 == true -> Folded = A1
       ; Folded = (A1,B1) ) ).
-fold_clause_aliases(Goal, Outside, Folded) :-
+fold_clause_bindings(Goal, Outside, Folded) :-
     compound(Goal), compound_name_arguments(Goal, Op, [A,B]),
     memberchk(Op, [;,->,*->]), !,
-    fold_clause_aliases(A, (Outside,B), A1),
-    fold_clause_aliases(B, (Outside,A), B1),
+    fold_clause_bindings(A, (Outside,B), A1),
+    fold_clause_bindings(B, (Outside,A), B1),
     compound_name_arguments(Folded, Op, [A1,B1]).
-fold_clause_aliases(Goal, Before, true) :- private_alias(Goal, Before, true), !.
-fold_clause_aliases(Goal, _, Goal).
+fold_clause_bindings(Goal, Before, Binding) :-
+    private_data_reduce(Goal, Before, Binding), !.
+fold_clause_bindings(Goal, Before, true) :- private_alias(Goal, Before, true), !.
+fold_clause_bindings(Goal, _, Goal).
+
+% A literal tuple with only fresh fields has an unbound head and cannot
+% dispatch as a function or contain a runtime cycle. Its result must also be
+% fresh and outside the tuple. Keep reduce's outer-cell copy at its original
+% point; aliasing the input cell would change destructive-update behavior.
+private_data_reduce(Goal, Before, fresh_data_list(List,Out)) :-
+    nonvar(Goal), Goal = reduce(List, Out),
+    is_list(List), List = [Head|_], var(Head), acyclic_term(List),
+    var(Out), \+ contains_var(Out, List),
+    term_variables([Out|List], Vars),
+    \+ ( member(V, Vars), contains_var(V, Before) ).
+
+% Keep this call boundary: the input tuple and returned outer cell are distinct,
+% while the tail is shared, exactly as reduce/2's inert-data branch constructs.
+fresh_data_list([Head|Tail], [Head|Tail]).
 
 private_alias(Goal, Before, Rest) :-
     nonvar(Goal), Goal = (X=Y),
