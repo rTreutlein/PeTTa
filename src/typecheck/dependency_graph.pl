@@ -2,6 +2,7 @@
 %%% boundary for proof dependencies. A compiled clause is keyed by its real
 %%% clause reference, so removal and specialization cannot leave a live edge.
 
+:- dynamic compiled_body_stale/1. % old bodies awaiting dependency-driven rebuild
 :- dynamic compiled_deps/4.     % compiled_deps(ClauseRef, F/N, SourceFile, Dependencies)
 :- dynamic compiled_dep_edge/3. % compiled_dep_edge(Dependency, ClauseRef, F/N)
 :- dynamic validation_dep_edge/2. % validation_dep_edge(Dependency, ValidationKey)
@@ -13,6 +14,7 @@ record_compiled_dependencies(Ref, F/N, Dependencies) :-
     record_compiled_dependencies(Ref, F/N, File, Dependencies).
 
 record_compiled_dependencies(Ref, F/N, File, Dependencies) :-
+    retractall(compiled_body_stale(Ref)),
     retractall(compiled_deps(Ref, _, _, _)),
     retractall(compiled_dep_edge(_, Ref, _)),
     forget_constructor_dependency_owner(compiled(Ref)),
@@ -26,6 +28,7 @@ record_compiled_dependencies(Ref, F/N, File, Dependencies) :-
     record_constructor_dependency_owner(compiled(Ref), Deps).
 
 forget_compiled_dependencies(Ref) :-
+    retractall(compiled_body_stale(Ref)),
     retractall(compiled_deps(Ref, _, _, _)),
     retractall(compiled_dep_edge(_, Ref, _)),
     forget_constructor_dependency_owner(compiled(Ref)).
@@ -83,6 +86,10 @@ notify_mutations(Events) :-
     State0 = graph_state(Seed, []),
     maplist(invalidate_mutation_event, Events),
     planned_recompile_functions(Events, State0, Functions),
+    % A consumer can be rebuilt before its callee. Never embed that callee's
+    % old executable body while its current source is awaiting recompilation.
+    forall((member(F,Functions),compiled_deps(Ref,F/_,_,_)),
+           (compiled_body_stale(Ref) -> true ; assertz(compiled_body_stale(Ref)))),
     with_unified_recompile_analysis(
         Functions,
         notify_mutation_queue(Events, State0, _)).

@@ -1508,12 +1508,54 @@ build_direct_call(Fun, Src, AVs, Out, Inner, Extra, Goals) :- length(AVs, N),
                                                                 -> resolve_memoization(Fun, AVs, Out, Goal0),
                                                                    ( numeric_inline(Fun, AVs, Out, Goal0, Inline)
                                                                      -> append([Inner, Inline, Extra], Goals)
+                                                                     ; pattern_inline(Fun, AVs, Out, Goal0, Inlined)
+                                                                       -> commit_call(Fun, Src, AVs, Out, Inlined, Goal),
+                                                                          append(Inner, [Goal|Extra], Goals)
                                                                      ; commit_call(Fun, Src, AVs, Out, Goal0, Goal),
                                                                        append(Inner, [Goal|Extra], Goals) )
                                                               ; incomplete_application_kind(Fun, Arity, partial)
                                                                 -> Out = partial(Fun, AVs),
                                                                    append(Inner, Extra, Goals)
                                                                  ; append(Inner, [throw_function_overapplication(Fun, N)|Extra], Goals) ).
+
+% Reuse validated pattern code, including its guards, alias timing and primitive
+% dispatch. Only native goals are eligible: no nested user calls or exposed cuts.
+% Dependency invalidation marks old bodies before any consumer is rebuilt.
+pattern_inline(F, Args, Out, Goal, (Out=Value,Body)) :-
+    oracle_mode(false), oracle_det_mode(false),
+    \+ current_compiling_caller(F, _),
+    append(Args,[Out],CallArgs), Direct=..[F|CallArgs], Goal==Direct,
+    length(Args,N),
+    findall(ATs-OT-Det,
+            (declared_fn_type(F,ATs,OT,Det),length(ATs,N)),
+            [_-'Number'-Effect]),
+    memberchk(Effect,[det,semidet]),
+    Arity is N+1, functor(Target,F,Arity),
+    predicate_property(Target,number_of_clauses(1)),
+    clause(Target,RawBody,Ref), \+ compiled_body_stale(Ref),
+    translated_from(Ref,[=,[F|SourceParams],Source]),
+    same_length(SourceParams,Args),maplist(var,SourceParams),
+    term_variables(SourceParams,Unique),same_length(SourceParams,Unique),
+    nonvar(Source),Source=[Case,Key,Pairs],Case==case,
+    var(Key),memberchk_eq(Key,SourceParams),is_list(Pairs),Pairs=[_|_],
+    compiled_deps(Ref,_,_,Deps),
+    copy_term_nat(Target-RawBody,Head-Copied),
+    Head=..[_|HeadArgs],append(Params,[Value],HeadArgs),
+    maplist(var,Params),term_variables(Params,Vars),same_length(Params,Vars),
+    ( nonvar(Copied),Copied=(First,Rest),First==(!) -> Body=Rest ; Body=Copied ),
+    inline_native_body(Body),
+    Params=Args,
+    maplist([D]>>analysis_emit(dependency(D)),Deps).
+
+inline_native_body(Goal) :-
+    nonvar(Goal),
+    ( memberchk(Goal,[true,fail]) -> true
+    ; compound_name_arguments(Goal,Op,[A,B]),memberchk(Op,[',',';','->','*->'])
+      -> inline_native_body(A),inline_native_body(B)
+    ; functor(Goal,F,N),
+      memberchk(F/N,[arg/3,is/2,(=)/2,(==)/2,(\==)/2,
+                     (<)/2,(>)/2,(=<)/2,(>=)/2,(=:=)/2,(=\=)/2]),
+      predicate_property(Goal,built_in) ).
 
 % Inline single-clause, explicitly det numeric functions. Read
 % their source anew, rather than embedding a possibly stale compiled body:
