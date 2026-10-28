@@ -1514,6 +1514,9 @@ reified_cond(G, Cv, Native) :- nonvar(G), G =.. [F, A, B, R], R == Cv,
                                builtin_codegen_hook(F, 2, reified_comparison),
                                cmp_native(F, A, B, Native),
                                builtin_untouched(F,2).
+reified_cond(G,Cv,Native) :-
+    nonvar(G),var(Cv),G=(Native->Yes;No),\+contains_var(Cv,Native),
+    reified_conditional(Native,Yes,No,Cv).
 
 cmp_native('<', A, B, (A < B)).
 cmp_native('<=', A, B, (A =< B)).
@@ -1537,7 +1540,7 @@ build_direct_call(Fun, Src, AVs, Out, Inner, Extra, Goals) :- length(AVs, N),
                                                                 -> resolve_memoization(Fun, AVs, Out, Goal0),
                                                                    ( constructor_inline(Fun, AVs, Out, Goal0, Native)
                                                                      -> append(Inner,[Native|Extra],Goals)
-                                                                     ; static_arithmetic_inline(Fun,AVs,Out,Goal0,Arithmetic)
+                                                                     ; static_scalar_inline(Fun,AVs,Out,Goal0,Arithmetic)
                                                                        -> fuse_arithmetic_goals(Inner,Src,[Arithmetic],WithArithmetic),
                                                                           append(WithArithmetic,Extra,Goals)
                                                                      ; numeric_inline(Fun, AVs, Out, Goal0, Inline)
@@ -1558,20 +1561,36 @@ readable_static_clause(Head,Body) :-
     predicate_property(Head,static),predicate_property(Head,number_of_clauses(1)),
     catch(clause(Head,Body),error(permission_error(_,_,_),_),fail).
 
-% A static imported scalar with one native is/2 body has no hidden effects.
-% Re-importing a function used this way invalidates its recorded callers.
-static_arithmetic_inline(F,Args,Out,Goal,(Out is Expr)) :-
+% Inline only readable static scalar bodies whose complete behavior is a
+% native calculation, numeric fact, or reified numeric comparison. Imports
+% invalidate the same dependency for all three forms. Facts remain data: an
+% infinite result must not be sent through is/2, which would throw instead.
+static_scalar_inline(F,Args,Out,Goal,Inline) :-
     oracle_mode(false),oracle_det_mode(false),length(Args,N),A is N+1,
     append(Args,[Out],All),Direct=..[F|All],Goal==Direct,
-    findall(ATs-OT-D,(declared_fn_type(F,ATs,OT,D),length(ATs,N)),[Types-'Number'-det]),
-    maplist(==('Number'),Types),functor(Head,F,A),
-    readable_static_clause(Head,Body),nonvar(Body),Body=(Value is Expr),var(Value),
-    Head=..[_|Formals],append(Params,[Result],Formals),Value==Result,
-    maplist(var,Formals),term_variables(Formals,Vars),same_length(Formals,Vars),
-    term_variables(Expr,Used),forall(member(V,Used),memberchk_eq(V,Params)),
-    native_scalar_expression(Expr),Params=Args,
+    findall(ATs-OT-D,(declared_fn_type(F,ATs,OT,D),length(ATs,N)),[Types-ResultType-det]),
+    maplist(==('Number'),Types),functor(Head,F,A),readable_static_clause(Head,Body),
+    Head=..[_|Formals],append(Params,[Result],Formals),
+    maplist(var,Params),term_variables(Params,Unique),same_length(Params,Unique),
+    static_scalar_body(ResultType,Params,Result,Body,Out,Inline),Params=Args,
     (static_compilation_assumption(F,N) -> true ; assertz(static_compilation_assumption(F,N))),
     analysis_emit(dependency(clause_set(F/N))).
+
+static_scalar_body('Number',[],Result,true,Out,(Out=Result)) :- number(Result).
+static_scalar_body(Type,Params,Result,Body,Out,Inline) :-
+    var(Result),\+memberchk_eq(Result,Params),
+    ( Type=='Number',nonvar(Body),Body=(Value is Expr),Value==Result,
+      native_scalar_expression(Expr)
+      -> Inline=(Out is Expr)
+    ; Type=='Bool',nonvar(Body),Body=(Test->Yes;No),
+      reified_conditional(Test,Yes,No,Result),
+      Test=..[Op,Left,Right],memberchk(Op,[<,=<,>,>=]),
+      native_scalar_expression(Left),native_scalar_expression(Right),
+      Expr=Test,Inline=(Test->Out=true;Out=false) ),
+    term_variables(Expr,Used),forall(member(V,Used),memberchk_eq(V,Params)).
+
+reified_conditional(Test,Yes,No,Result) :-
+    nonvar(Test),nonvar(Yes),nonvar(No),Yes=(Y=true),No=(N=false),Y==Result,N==Result.
 
 native_scalar_expression(E) :-
     (var(E);number(E)),!.

@@ -8,6 +8,7 @@ swipl -q -s tests/test_compiled_inlining.pl -g "run_tests(compiled_inlining)" -t
 swipl -q -s tests/test_pattern_inlining.pl -g "run_tests(pattern_inlining)" -t halt || exit 1
 swipl -q -s tests/test_scalar_inlining.pl -g "run_tests(scalar_inlining)" -t halt || exit 1
 swipl -q -s tests/test_native_arithmetic.pl -g "run_tests(native_arithmetic)" -t halt || exit 1
+swipl -q -s tests/test_static_scalars.pl -g "run_tests(static_scalars)" -t halt || exit 1
 swipl -q -s tests/test_protected_static.pl -g "run_tests(protected_static)" -t halt || exit 1
 swipl -q -s tests/test_arithmetic_fusion.pl -g "run_tests(arithmetic_fusion)" -t halt || exit 1
 swipl -q -s tests/test_alias_folding.pl -g "run_tests(alias_folding)" -t halt || exit 1
