@@ -158,13 +158,17 @@ alpha_list_to_set(List, Set) :-
 
 alpha_list_to_set_assoc([], _, []).
 alpha_list_to_set_assoc([H|T], SeenIn, R) :-
-    copy_term_nat(H, HCopy),
-    numbervars(HCopy, 0, _),
-    term_hash(HCopy, Key),
-    ( get_assoc(Key, SeenIn, _) ->
-        alpha_list_to_set_assoc(T, SeenIn, R)
+    variant_hash(H, Key),
+    ( get_assoc(Key, SeenIn, Bucket) ->
+        ( member(B, Bucket), attribute_free_variant(H, B) ->
+            alpha_list_to_set_assoc(T, SeenIn, R)
+        ;
+            put_assoc(Key, SeenIn, [H|Bucket], SeenOut),
+            R = [H|RT],
+            alpha_list_to_set_assoc(T, SeenOut, RT)
+        )
     ;
-        put_assoc(Key, SeenIn, true, SeenOut),
+        put_assoc(Key, SeenIn, [H], SeenOut),
         R = [H|RT],
         alpha_list_to_set_assoc(T, SeenOut, RT)
     ).
