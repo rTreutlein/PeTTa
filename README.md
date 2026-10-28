@@ -59,6 +59,16 @@ Types make code *faster*, not slower: resolved arithmetic fuses to native
 see below) `fib` compiles to the same clause a Prolog programmer would write
 by hand — about twice as fast as the untyped translation was before.
 
+Readable static imports with one pure scalar body can also compile directly:
+native arithmetic, a numeric constant fact (including infinity as data), or a
+numeric comparison returning a Boolean. Effects, constrained/aliased input
+heads, dynamic predicates, oracle boundaries and unreadable static code keep
+the call. Re-importing invalidates callers that used the old body.
+Numeric if-conditions absorb private single-use arithmetic temporaries, keeping
+the expression tree and the same effect/source-variable barriers as arithmetic
+fusion. Identity comparisons still compare evaluated terms. As with arithmetic
+fusion, independent failing arithmetic operands need not raise in source order.
+
 **Inference.** Undeclared functions get local type inference (parameters are
 inferred from how the body uses them, including through self-recursion).
 Inferred types only ever *add* knowledge — they eliminate guards, type call

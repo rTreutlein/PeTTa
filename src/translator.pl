@@ -1507,8 +1507,17 @@ builtin_untouched(F,N) :- A is N+1,functor(H,F,A),predicate_property(H,number_of
 %native comparison, skipping the true/false round-trip:
 translate_if_cond(Cond, PreConj, CondGoal) :- translate_expr(Cond, GsC, Cv),
                                               ( var(Cv), append(Pre, [Last], GsC), reified_cond(Last, Cv, Native)
-                                                -> goals_list_to_conj(Pre, PreConj), CondGoal = Native
+                                                -> fuse_numeric_comparison(Pre,Cond,Native,Kept,CondGoal),
+                                                   goals_list_to_conj(Kept,PreConj)
                                                  ; goals_list_to_conj(GsC, PreConj), CondGoal = (Cv == true) ).
+
+% A numeric condition evaluates arithmetic operands just as is/2 does. Keep
+% the same source-variable and effect barriers when absorbing private argument
+% temporaries; identity comparisons must keep their evaluated numeric terms.
+fuse_numeric_comparison(Pre,Source,Native,Kept,Fused) :-
+    compound(Native),Native=..[Op,_,_],memberchk(Op,[<,=<,>,>=]),!,
+    reverse(Pre,Back),fuse_arithmetic_tail(Back,Source,Native,Rest,Fused),reverse(Rest,Kept).
+fuse_numeric_comparison(Pre,_,Native,Pre,Native).
 
 reified_cond(G, Cv, Native) :- nonvar(G), G =.. [F, A, B, R], R == Cv,
                                builtin_codegen_hook(F, 2, reified_comparison),
@@ -1703,7 +1712,8 @@ numeric_scalar_expr(Source, Env, Goals, Value) :-
     numeric_scalar_expr(Else, Env, EGs, EV),
     append(TGs, [Value=TV], TOut), goals_list_to_conj(TOut, TConj),
     append(EGs, [Value=EV], EOut), goals_list_to_conj(EOut, EConj),
-    append([LGs,RGs,[(Test -> TConj ; EConj)]], Goals),
+    append(LGs,RGs,Before),fuse_numeric_comparison(Before,Cond,Test,Kept,Guard),
+    append(Kept,[(Guard -> TConj ; EConj)],Goals),
     analysis_emit(dependency(clause_set(Op/2))),
     analysis_emit(dependency(decl(Op/2))),
     analysis_emit(dependency(effect(Op/2))).

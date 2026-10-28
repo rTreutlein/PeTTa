@@ -20,6 +20,12 @@
 (= (fusion-unused $x) (progn (/ 1 $x) (+ $x 1)))
 (: fusion-bound (-[semidet]-> Number Number Number))
 (= (fusion-bound $x $expected) (let $expected (+ $x 1) (* $expected 2)))
+(: fusion-condition (-[det]-> Number Number Number))
+(= (fusion-condition $x $y) (if (> $x (+ (* $y $y) 1)) 7 9))
+(: fusion-condition-use (-[det]-> Number Number Number))
+(= (fusion-condition-use $x $y) (fusion-condition $x $y))
+(: fusion-identity (-[det]-> Number Bool))
+(= (fusion-identity $x) (== (+ $x 1) 3))
 (: fusion-choices (-[nondet]-> Number Number))
 (= (fusion-choices $x) (+ (* (superpose (1 2)) $x) 3))
 ", _).
@@ -74,5 +80,25 @@ test(source_variable_producer_is_preserved) :-
 test(multiply_used_temporary_is_preserved) :-
     fuse_arithmetic_goals([Temp is X/2],[X],[Out is Temp+Temp],Goals),
     Goals == [Temp is X/2,Out is Temp+Temp].
+
+test(numeric_condition_keeps_its_expression_tree) :-
+    clause('fusion-condition'(X,Y,_),Body),
+    once((sub_term(G,Body),nonvar(G),G =@= (X>Y*Y+1))),
+    'fusion-condition'(6,2,7),'fusion-condition'(5,2,9),
+    'fusion-condition-use'(6,2,7),'fusion-condition-use'(5,2,9).
+test(identity_does_not_compare_expression_syntax) :-
+    'fusion-identity'(2,true),'fusion-identity'(3,false).
+test(comparison_keeps_source_bindings) :-
+    fuse_numeric_comparison([T is X+1],[T,X],(T>0),Kept,Test),
+    Kept==[T is X+1],Test==(T>0).
+test(comparison_does_not_cross_an_effect) :-
+    Gs=[T is 1/X,'fusion-touch'(3,Y)],
+    fuse_numeric_comparison(Gs,[X],(T>Y),Kept,Test),Kept==Gs,Test==(T>Y).
+test(comparison_preserves_observed_alias) :-
+    Gs=[Seen=T,T is X+1],
+    fuse_numeric_comparison(Gs,[X],(T>0),Kept,Test),Kept==Gs,Test==(T>0).
+test(comparison_keeps_repeated_temporary) :-
+    Gs=[T is X+1],
+    fuse_numeric_comparison(Gs,[X],(T>T),Kept,Test),Kept==Gs,Test==(T>T).
 
 :- end_tests(arithmetic_fusion).
