@@ -152,7 +152,7 @@ affected_compiled_functions_all(Events, Functions) :-
               compiled_dep_edge(Dependency, Ref, F/_),
               compiled_deps(Ref, _, File, _),
               clause(_, _, Ref),
-              mutation_consumer_file_relevant(Event, File) ),
+              mutation_consumer_relevant(Event, Dependency, File) ),
             Functions0),
     sort(Functions0, Sorted),
     findall(F,
@@ -185,6 +185,12 @@ mutation_consumer_file_relevant(clause_changed(_, prevalidated), File) :- !,
     File \== Current.
 mutation_consumer_file_relevant(_, _).
 
+%A caller that copied a callee's only clause did not call the predicate, so a
+%later source clause must rebuild it even within the same file.
+mutation_consumer_relevant(_, inlined_clauses(_), _) :- !.
+mutation_consumer_relevant(Event, _, File) :-
+    mutation_consumer_file_relevant(Event, File).
+
 %A source-loaded (prevalidated) clause only resolves late references to it;
 %any other clause change invalidates everything that read its function.
 mutation_candidate_dependency(clause_changed(F/N, Mode), D) :-
@@ -192,6 +198,7 @@ mutation_candidate_dependency(clause_changed(F/N, Mode), D) :-
       -> member(D, [late_call(F/N), late_symbol(F)])
     ; member(D, [effect(F/N), decl(F/N), clause_set(F/N), output_cert(_, F/N),
                  late_call(F/N), late_symbol(F)]) ).
+mutation_candidate_dependency(clause_changed(F/N, _), inlined_clauses(F/N)).
 mutation_candidate_dependency(declaration_changed(F/N, _), D) :-
     member(D, [effect(F/N), decl(F/N), clause_set(F/N)]).
 mutation_candidate_dependency(declaration_changed(Kind, Name, _),

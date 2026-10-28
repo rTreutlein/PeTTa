@@ -1607,6 +1607,7 @@ compiled_inline(F, Args, Out, Goal, Inline) :-
     Head=..[_|Formal],
     maplist([A,P,(A=P)]>>true,Actual,Formal,Bindings),
     append(Bindings,[Body],Sequence),goals_list_to_conj(Sequence,Inline),
+    analysis_emit(dependency(inlined_clauses(F/N))),
     maplist([D]>>analysis_emit(dependency(D)),Deps).
 
 inline_body_budget(Goal,Self,Before,After) :-
@@ -1649,7 +1650,8 @@ numeric_inline(F, Args, Out, Goal, [Out=Value|Body]) :-
     % head constraint and suppress an earlier arithmetic exception.
     Params=Args,
     det_boundness_checks(F, Args, Checks), append(Checks, Arithmetic, Body),
-    analysis_emit(dependency(clause_set(F/N))).
+    analysis_emit(dependency(clause_set(F/N))),
+    analysis_emit(dependency(inlined_clauses(F/N))).
 
 numeric_scalar_expr(Source, Env, Goals, Value) :-
     nonvar(Source), Source=[Tag,Binds,Body], Tag=='let*', !,
