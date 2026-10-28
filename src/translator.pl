@@ -1550,6 +1550,12 @@ build_direct_call(Fun, Src, AVs, Out, Inner, Extra, Goals) :- length(AVs, N),
                                                                    append(Inner, Extra, Goals)
                                                                  ; append(Inner, [throw_function_overapplication(Fun, N)|Extra], Goals) ).
 
+% The only clause of a static predicate, if this session may read it. Under
+% protect_static_code clause/2 refuses static code; the caller keeps its call.
+readable_static_clause(Head,Body) :-
+    predicate_property(Head,static),predicate_property(Head,number_of_clauses(1)),
+    catch(clause(Head,Body),error(permission_error(_,_,_),_),fail).
+
 % A static imported scalar with one native is/2 body has no hidden effects.
 % Re-importing a function used this way invalidates its recorded callers.
 static_arithmetic_inline(F,Args,Out,Goal,(Out is Expr)) :-
@@ -1557,8 +1563,7 @@ static_arithmetic_inline(F,Args,Out,Goal,(Out is Expr)) :-
     append(Args,[Out],All),Direct=..[F|All],Goal==Direct,
     findall(ATs-OT-D,(declared_fn_type(F,ATs,OT,D),length(ATs,N)),[Types-'Number'-det]),
     maplist(==('Number'),Types),functor(Head,F,A),
-    predicate_property(Head,static),predicate_property(Head,number_of_clauses(1)),
-    clause(Head,Body),nonvar(Body),Body=(Value is Expr),var(Value),
+    readable_static_clause(Head,Body),nonvar(Body),Body=(Value is Expr),var(Value),
     Head=..[_|Formals],append(Params,[Result],Formals),Value==Result,
     maplist(var,Formals),term_variables(Formals,Vars),same_length(Formals,Vars),
     term_variables(Expr,Used),forall(member(V,Used),memberchk_eq(V,Params)),
@@ -1598,6 +1603,9 @@ compiled_inline(F, Args, Out, Goal, Inline) :-
     ( Result == 'Number' -> true
     ; is_list(Result),Result=[_,_|_],maplist(==('Number'),Result) ),
     Arity is N+1, functor(Target,F,Arity),
+    % Only translated MeTTa clauses, which are dynamic; an imported static
+    % predicate may refuse clause/3.
+    predicate_property(Target,dynamic),
     predicate_property(Target,number_of_clauses(1)),
     clause(Target,RawBody,Ref), \+ compiled_body_stale(Ref),
     translated_from(Ref,_), compiled_deps(Ref,_,_,Deps),
@@ -1634,6 +1642,7 @@ numeric_inline(F, Args, Out, Goal, [Out=Value|Body]) :-
             [ArgTypes-OutType-det]),
     maplist(==('Number'), ArgTypes),
     Arity is N+1, functor(Head, F, Arity),
+    predicate_property(Head, dynamic),
     predicate_property(Head, number_of_clauses(1)),
     clause(Head, _, Ref), translated_from(Ref, [=,[F|Params],Source]),
     same_length(Params, Args), maplist(var, Params),
