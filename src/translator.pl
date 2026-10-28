@@ -1470,6 +1470,8 @@ arith_inline(Fun, Args, Out, Gs) :- length(Args,N),
 % is observable and must keep its binding. A non-arithmetic goal is a barrier:
 % postponing a possibly throwing calculation across it would reorder effects.
 % Substitution preserves the expression tree, including floating-point order.
+% It does not preserve which of two failing calculations raises: SWI evaluates
+% arithmetic arguments right to left, so fused siblings run in reverse.
 fuse_arithmetic_goals(Inner, Source, [Out is Expr], Goals) :- !,
     reverse(Inner, Reversed),
     fuse_arithmetic_tail(Reversed, Source, Expr, Kept, Fused),
