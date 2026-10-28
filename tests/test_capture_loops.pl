@@ -90,6 +90,24 @@ test(observed_output_keeps_the_original_loop) :-
     fresh_result_calls(Goal,observed(Out),Copy,[]),Copy==Goal.
 test(failed_condition_is_not_a_proper_list_proof) :-
     \+seen_proper_list(X,failed(is_list(X))).
+test(rewrite_has_one_answer) :-
+    S='flat-test-each_Spec_[partial(flat-test-shift,[_])]',
+    Goal=..[S,Xs,2,_],
+    findall(Out,fresh_result_calls((is_list(Xs),Goal),head,Out,_),[(_,Copy)]),
+    Copy\==Goal.
+test(alternative_branch_is_not_a_proper_list_proof) :-
+    S='flat-test-each_Spec_[partial(flat-test-shift,[_])]',
+    Goal=..[S,Xs,2,_],
+    fresh_result_calls((is_list(Xs);Goal),head,Out,_),Out=(_;Copy),Copy==Goal,
+    fresh_result_calls((Goal;is_list(Xs)),head,Out2,_),Out2=(Copy2;_),Copy2==Goal.
+test(then_branch_is_not_a_proof_for_its_condition) :-
+    S='flat-test-each_Spec_[partial(flat-test-shift,[_])]',
+    Goal=..[S,Xs,2,_],
+    fresh_result_calls((Goal->is_list(Xs)),head,Out,_),Out=(Copy->_),Copy==Goal.
+test(succeeded_condition_proves_its_then_branch) :-
+    S='flat-test-each_Spec_[partial(flat-test-shift,[_])]',
+    Goal=..[S,Xs,2,_],
+    fresh_result_calls((is_list(Xs)->Goal),head,Out,_),Out=(_->Copy),Copy\==Goal.
 test(an_independent_nondeterministic_prefix_keeps_its_answers) :-
     findall(R,'flat-test-branch-total'(2,[1,2],R),[7,7,107,7,7,107,107,107,207]),
     ho_specialization('flat-test-branch-each',S),\+ho_fresh_result(_,S).

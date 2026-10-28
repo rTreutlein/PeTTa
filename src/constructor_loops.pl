@@ -13,8 +13,11 @@ fresh_result_calls(Goal,Before,Out,Deps) :-
          fresh_result_calls(Else,(Before,failed(I1)),E1,D3),
          Out=(I1->T1;E1),append([D1,D2,D3],Deps)
     ; compound(Goal),compound_name_arguments(Goal,Op,[A,B]),memberchk(Op,[;,->,*->])
-      -> fresh_result_calls(A,(Before,B),A1,D1),
-         fresh_result_calls(B,(Before,A),B1,D2),
+      -> % The other side still counts for freshness. Only a condition that
+         % succeeded before its then-branch contributes shape evidence.
+         (Op == (;) -> Done=unexecuted(A) ; Done=succeeded(A)),
+         fresh_result_calls(A,(Before,unexecuted(B)),A1,D1),
+         fresh_result_calls(B,(Before,Done),B1,D2),
          compound_name_arguments(Out,Op,[A1,B1]),append(D1,D2,Deps)
     ; nonvar(Goal),Goal=once(G)
       -> fresh_result_calls(G,Before,G1,Deps),Out=once(G1)
@@ -23,12 +26,14 @@ fresh_result_calls(Goal,Before,Out,Deps) :-
       ho_capture_layout(F,_),seen_proper_input(F,Inputs,Before),
       oracle_mode(false),oracle_det_mode(false),
       \+suppress_det_cut(true),
-      fresh_result_worker(F,Worker),Out=..[Worker|Args],
-      length(Inputs,N),Deps=[clause_set(Worker/N),decl(Worker/N),clause_set(F/N)]
+      fresh_result_worker(F,Worker)
+      -> Out=..[Worker|Args],
+         length(Inputs,N),Deps=[clause_set(Worker/N),decl(Worker/N),clause_set(F/N)]
     ; Out=Goal,Deps=[] ).
 
 % Only successful earlier goals contribute shape evidence. A failed if
-% condition can expose variables, but is not evidence that is_list succeeded.
+% condition or a goal on another branch can expose variables, but is not
+% evidence that is_list succeeded.
 seen_proper_input(F,Inputs,Before) :-
     findall(Ts,declared_fn_type(F,Ts,_,_),[Types]),
     findall(I,(nth0(I,Types,T),nonvar(T),T=['List',_]),[Index]),
@@ -37,6 +42,7 @@ seen_proper_list(V,_) :- is_list(V),!.
 seen_proper_list(V,Goal) :-
     nonvar(Goal),
     (Goal=failed(_) -> fail
+    ; Goal=unexecuted(_) -> fail
     ; Goal=succeeded(G) -> seen_proper_list(V,G)
     ; Goal=(A,B) -> (seen_proper_list(V,A);seen_proper_list(V,B))
     ; Goal=is_list(X) -> V==X
