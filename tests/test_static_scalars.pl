@@ -47,6 +47,35 @@ test(head_constraint_is_preserved) :-
     'static-pattern-use'(0,true),\+ 'static-pattern-use'(1,_).
 test(result_read_by_test_is_not_reified_away) :-
     \+ reified_cond((R=false->R=true;R=false),R,_).
+test(variable_true_arm_is_not_a_boolean_literal) :-
+    Goal=(X>0->R=Value;R=false),\+ reified_cond(Goal,R,_),
+    var(X),var(R),var(Value).
+test(variable_false_arm_is_not_a_boolean_literal) :-
+    Goal=(X>0->R=true;R=Value),\+ reified_cond(Goal,R,_),
+    var(X),var(R),var(Value).
+test(nested_boolean_condition_preserves_runtime_parameters) :-
+    % A source parameter in an arm must not become a literal during codegen.
+    % Inside an outer branch this used to crash while restoring Bool attrs;
+    % outside one it silently constrained the generated predicate's head.
+    process_metta_string("
+(: static-choice (-[det]-> Bool Bool Bool))
+(= (static-choice $condition $fallback)
+   (if (if $condition true $fallback) true false))
+(: static-nested-choice (-[det]-> Bool Bool Bool Number))
+(= (static-nested-choice $gate $condition $fallback)
+   (if $gate (if (if $condition true $fallback) 1 2) 3))
+(: static-choice-then (-[det]-> Bool Bool Bool))
+(= (static-choice-then $condition $selected)
+   (if (if $condition $selected false) true false))
+",_),
+    forall((member(C,[true,false]),member(F,[true,false])),
+      ((C==true->Expected=true;Expected=F),
+       findall(R,'static-choice'(C,F,R),[Expected]),
+       (C==true->ThenExpected=F;ThenExpected=false),
+       findall(R,'static-choice-then'(C,F,R),[ThenExpected]),
+       forall(member(G,[true,false]),
+         ((G==false->N=3;Expected==true->N=1;N=2),
+          findall(R,'static-nested-choice'(G,C,F,R),[N]))))).
 test(dependencies_record_both_new_scalar_forms) :-
     clause('static-data'(_),_,R1),compiled_deps(R1,_,_,D1),memberchk(clause_set('static-excluded'/0),D1),
     clause('static-select'(_,_),_,R2),compiled_deps(R2,_,_,D2),memberchk(clause_set('static-low'/1),D2).

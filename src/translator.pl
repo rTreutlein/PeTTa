@@ -1626,8 +1626,10 @@ static_scalar_body(Type,Params,Result,Body,Out,Inline) :-
       Expr=Test,Inline=(Test->Out=true;Out=false) ),
     term_variables(Expr,Used),forall(member(V,Used),memberchk_eq(V,Params)).
 
+% Inspect branch literals without binding a runtime value in either arm.
 reified_conditional(Test,Yes,No,Result) :-
-    nonvar(Test),nonvar(Yes),nonvar(No),Yes=(Y=true),No=(N=false),Y==Result,N==Result.
+    nonvar(Test),nonvar(Yes),nonvar(No),Yes=(Y=Then),No=(N=Else),
+    Y==Result,N==Result,Then==true,Else==false.
 
 native_scalar_expression(E) :-
     (var(E);number(E)),!.
