@@ -69,6 +69,12 @@ the expression tree and the same effect/source-variable barriers as arithmetic
 fusion. Identity comparisons still compare evaluated terms. As with arithmetic
 fusion, independent failing arithmetic operands need not raise in source order.
 
+Inlined numeric helpers can absorb private arithmetic argument temporaries at
+one guaranteed use. Fusion crosses only fresh aliases and fresh arithmetic
+results; callbacks, potentially failing bindings and branch-only uses remain
+barriers. Unused/repeated arguments keep their eager calculation, and the
+floating-point expression tree stays unchanged.
+
 **Inference.** Undeclared functions get local type inference (parameters are
 inferred from how the body uses them, including through self-recursion).
 Inferred types only ever *add* knowledge — they eliminate guards, type call

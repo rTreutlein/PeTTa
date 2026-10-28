@@ -1489,6 +1489,33 @@ fuse_arithmetic_tail([Goal|Earlier], Source, Expr, Kept, Fused) :-
     fuse_arithmetic_tail(Earlier, Source, Combined, Kept, Fused).
 fuse_arithmetic_tail(Kept, _, Expr, Kept, Expr).
 
+% Argument calculations may precede several independent instructions in an
+% inlined numeric helper. Absorb a private producer only at its one guaranteed
+% use, before any possibly failing binding, callback, or untaken branch. Fresh
+% aliases and fresh arithmetic results cannot fail by output unification.
+% Pure arithmetic error selection follows the existing fusion policy above.
+fuse_inline_arguments([],_,_,Body,Body).
+fuse_inline_arguments([Goal|Rest],Source,Before,Body,Goals) :-
+    fuse_inline_arguments(Rest,Source,[Goal|Before],Body,Tail),
+    ( nonvar(Goal),Goal=(Temp is Expr),var(Temp),
+      \+contains_var(Temp,Source-Before),occurrences_of_var(Temp,Tail,1),
+      fuse_inline_use(Tail,Source-Before-Goal,Temp,Expr,Fused)
+      -> Goals=Fused
+    ; Goals=[Goal|Tail] ).
+
+fuse_inline_use([Goal|Rest],_Before,Temp,Expr,[Fused|Rest]) :-
+    nonvar(Goal),
+    ( Goal=(_ is Arithmetic),contains_var(Temp,Arithmetic)
+    ; Goal=(Test->_;_),nonvar(Test),Test=..[Op,_,_],
+      memberchk(Op,[<,=<,>,>=]),contains_var(Temp,Test) ),!,
+    substitute_source_var(Temp,Expr,Goal,Fused).
+fuse_inline_use([Goal|Rest],Before,Temp,Expr,[Goal|Fused]) :-
+    \+contains_var(Temp,Goal),nonvar(Goal),
+    ( Goal=(Left=Right),var(Left),var(Right),
+      (\+contains_var(Left,Before);\+contains_var(Right,Before))
+    ; Goal=(Result is _),var(Result),\+contains_var(Result,Before) ),
+    fuse_inline_use(Rest,(Before,Goal),Temp,Expr,Fused).
+
 arith_op('+', [A,B], A+B).
 arith_op('-', [A,B], A-B).
 arith_op('*', [A,B], A*B).
@@ -1553,7 +1580,8 @@ build_direct_call(Fun, Src, AVs, Out, Inner, Extra, Goals) :- length(AVs, N),
                                                                        -> fuse_arithmetic_goals(Inner,Src,[Arithmetic],WithArithmetic),
                                                                           append(WithArithmetic,Extra,Goals)
                                                                      ; numeric_inline(Fun, AVs, Out, Goal0, Inline)
-                                                                     -> append([Inner, Inline, Extra], Goals)
+                                                                     -> fuse_inline_arguments(Inner,Src-Out-Extra,[],Inline,Fused),
+                                                                        append(Fused,Extra,Goals)
                                                                      ; compiled_inline(Fun, AVs, Out, Goal0, Inlined)
                                                                        -> commit_call(Fun, Src, AVs, Out, Inlined, Goal),
                                                                           append(Inner, [Goal|Extra], Goals)
