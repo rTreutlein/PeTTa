@@ -1,6 +1,7 @@
 :- dynamic translated_from/2.
 :- dynamic static_compilation_assumption/2.
 :- ensure_loaded(constructor_loops).
+:- ensure_loaded(scalar_folds).
 
 
 %Pattern matching, structural and functional/relational constraints on arguments:
@@ -74,7 +75,9 @@ translate_clause(Input, Clause, ConstrainArgs, Dependencies) :-
         (ho_fresh_result(F,Parent)
           -> fresh_result_clause(Parent,Head,Folded,FinalHead,FinalBody),
              length(Args,SourceN),Added=[clause_set(Parent/SourceN),decl(Parent/SourceN)]
-        ; fresh_result_calls(Folded,Head,FinalBody,Added),FinalHead=Head),
+        ; fresh_result_calls(Folded,Head,Constructed,ConstructorDeps),
+          scalar_fold_calls(Constructed,Head,FinalBody,ScalarDeps),
+          append(ConstructorDeps,ScalarDeps,Added),FinalHead=Head),
         append(Dependencies0,Added,AllDeps),sort(AllDeps,Dependencies),
         maplist([D]>>analysis_emit(dependency(D)),Added),
         Clause = (FinalHead :- FinalBody).

@@ -75,6 +75,14 @@ results; callbacks, potentially failing bindings and branch-only uses remain
 barriers. Unused/repeated arguments keep their eager calculation, and the
 floating-point expression tree stays unchanged.
 
+A private numeric tuple returned by a producer ending in a specialized fold
+can stay in separate Prolog arguments, including the fold accumulator and its
+results. This removes intermediate tuple construction without changing the
+MeTTa source. The producer's guards and effect order remain intact. Escaping or
+previously observed tuples, unsupported fold shapes and fields not proven
+numeric retain their ordinary representation. Generated workers participate
+in specialization invalidation and load-cache replay.
+
 **Inference.** Undeclared functions get local type inference (parameters are
 inferred from how the body uses them, including through self-recursion).
 Inferred types only ever *add* knowledge — they eliminate guards, type call

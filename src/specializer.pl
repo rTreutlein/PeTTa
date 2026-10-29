@@ -205,6 +205,7 @@ forget_symbol(Name) :- retractall('&self'(=, [Name|_], _)),
                        retractall(ho_specialization(Name,_)),
                        retractall(ho_capture_layout(Name,_)),
                        retractall(ho_fresh_result(Name,_)),
+                       retractall(ho_scalar_fold(Name,_)),
                        retractall(ho_specialization(_,Name)).
 
 %Invalidate all specializations:
