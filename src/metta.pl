@@ -158,13 +158,17 @@ alpha_list_to_set(List, Set) :-
 
 alpha_list_to_set_assoc([], _, []).
 alpha_list_to_set_assoc([H|T], SeenIn, R) :-
-    copy_term_nat(H, HCopy),
-    numbervars(HCopy, 0, _),
-    term_hash(HCopy, Key),
-    ( get_assoc(Key, SeenIn, _) ->
-        alpha_list_to_set_assoc(T, SeenIn, R)
+    variant_hash(H, Key),
+    ( get_assoc(Key, SeenIn, Bucket) ->
+        ( member(B, Bucket), attribute_free_variant(H, B) ->
+            alpha_list_to_set_assoc(T, SeenIn, R)
+        ;
+            put_assoc(Key, SeenIn, [H|Bucket], SeenOut),
+            R = [H|RT],
+            alpha_list_to_set_assoc(T, SeenOut, RT)
+        )
     ;
-        put_assoc(Key, SeenIn, true, SeenOut),
+        put_assoc(Key, SeenIn, [H], SeenOut),
         R = [H|RT],
         alpha_list_to_set_assoc(T, SeenOut, RT)
     ).
@@ -217,16 +221,28 @@ member_alpha(X, [_|T]) :- member_alpha(X, T).
 
 %%% Type system: %%%
 get_function_type([F|Args], T) :- nonvar(F), match('&self', [':',F,[->|Ts]], _, _),
-                                  append(As,[T],Ts),
-                                  maplist('get-type',Args,As).
+                                  append(As,[T0],Ts),
+                                  checked_args(As, Args, As1, Args1),
+                                  T = T0,
+                                  maplist('get-type',Args1,As1).
+%As in typed calls, an argument declared %Undefined% is not checked. These parameters are found
+%before the requested type or another argument can bind a type variable to %Undefined%:
+checked_args([], [], [], []).
+checked_args([A|As], [X|Xs], Bs, Ys) :- ( A == '%Undefined%' -> Bs = Bs1, Ys = Ys1 ; Bs = [A|Bs1], Ys = [X|Ys1] ),
+                                        checked_args(As, Xs, Bs1, Ys1).
 
 :- dynamic 'get-type'/2.
-'get-type'(X, T) :- (get_type_candidate(X, T) *-> true ; T = '%Undefined%' ).
-get_type_candidate(X, 'Number')   :- number(X), !.
+%An unbound request takes each type of the value, or %Undefined% if it has none. %Undefined% is
+%confirmed only for a value without types or with %Undefined% among them:
+'get-type'(X, T) :- ( var(T) -> ( get_type_candidate(X, T0) *-> T = T0 ; T = '%Undefined%' )
+                    ; T == '%Undefined%' -> ( \+ get_type_candidate(X, _) -> true ; get_type_candidate(X, T) )
+                    ; get_type_candidate(X, T) ).
+%An intrinsic kind is chosen before the requested type is compared:
+get_type_candidate(X, T) :- number(X), !, T = 'Number'.
 get_type_candidate(X, _) :- var(X), !.
-get_type_candidate(X, 'String')   :- string(X), !.
-get_type_candidate(true, 'Bool')  :- !.
-get_type_candidate(false, 'Bool') :- !.
+get_type_candidate(X, T) :- string(X), !, T = 'String'.
+get_type_candidate(true, T) :- !, T = 'Bool'.
+get_type_candidate(false, T) :- !, T = 'Bool'.
 get_type_candidate(X, T) :- get_function_type(X,T).
 get_type_candidate(X, T) :- \+ get_function_type(X, _),
                             is_list(X),
@@ -275,9 +291,15 @@ py_bool_norm('@'(true), true) :- !.
 py_bool_norm('@'(false), false) :- !.
 py_bool_norm(R, R).
 'py-call'(SpecList, Result) :- 'py-call'(SpecList, Result, []).
-'py-call'([Spec|Args], Result, Opts) :- ( string(Spec) -> atom_string(A, Spec) ; A = Spec ),
-                                        must_be(atom, A),
-                                        ( sub_atom(A, 0, 1, _, '.')         % ".method"
+'py-call'([Spec|Args], Result, Opts) :-
+    ( py_is_object(Spec)
+      -> ( Args == []
+           -> compound_name_arguments(Call, '__call__', [])
+            ; Call =.. ['__call__'|Args] ),
+         py_call(Spec:Call, R0, Opts), py_bool_norm(R0, Result)
+      ; ( string(Spec) -> atom_string(A, Spec) ; A = Spec ),
+        must_be(atom, A),
+        ( sub_atom(A, 0, 1, _, '.')         % ".method"
                                           -> sub_atom(A, 1, _, 0, Fun),
                                              Args = [Obj|Rest],
                                              ( py_is_object(Obj)            % on a Python object reference
@@ -296,7 +318,7 @@ py_bool_norm(R, R).
                                               ; ( Args == []                      % bare "fun"
                                                   -> compound_name_arguments(Call0, A, [])
                                                    ; Call0 =.. [A|Args] ),
-                                                py_call(builtins:Call0, R0, Opts), py_bool_norm(R0, Result) ).
+                                                py_call(builtins:Call0, R0, Opts), py_bool_norm(R0, Result) ) ).
 
 %%% States: %%%
 'bind!'(A, ['new-state', B], C) :- 'change-state!'(A, B, C).
