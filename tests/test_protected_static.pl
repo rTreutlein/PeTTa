@@ -1,5 +1,6 @@
-:- set_prolog_flag(protect_static_code,true).
 :- ensure_loaded('../src/metta').
+% Protect the imports under test after the runtime validates its own registry.
+:- set_prolog_flag(protect_static_code,true).
 
 % Under protect_static_code, clause/2 refuses static predicates. Inlining and
 % proof shortcuts that read an imported body must then keep the call.
